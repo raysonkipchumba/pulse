@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import { db, initDatabase } from './db.js';
 import { handleRiskPipeline } from './riskEngine.js';
 import { createPayPalOrder, capturePayPalOrder } from './paypal.js';
@@ -300,6 +303,19 @@ Guidelines:
     res.status(500).json({ error: err.message });
   }
 });
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
+
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.join(clientDist, 'index.html'));
+    }
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`Pulse API running on http://localhost:${PORT}`);
