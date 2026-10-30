@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --pulse-primary: #5a3bbe;
+  --pulse-white: #ffffff;
+  --pulse-black: #000000;
+}
+
+body {
+  background-color: #ffffff;
+  color: #000000;
+  margin: 0;
+  padding: 0;
+}
+
+/* 100% opaque card using #5a3bbe */
+.pulse-card {
+  background-color: #5a3bbe;
+  color: #ffffff;
+  border-radius: 1rem;
+}
+
+/* Outline card */
+.pulse-card-outline {
+  background-color: #ffffff;
+  color: #000000;
+  border: 2px solid #5a3bbe;
+  border-radius: 1rem;
+}
+
+/* Primary Button */
+.pulse-btn-primary {
+  background-color: #5a3bbe;
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  border: 1px solid #5a3bbe;
+  transition: opacity 0.15s ease;
+}
+.pulse-btn-primary:hover {
+  opacity: 0.92;
+}
+
+/* Secondary Button */
+.pulse-btn-secondary {
+  background-color: #ffffff;
+  color: #000000;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  border: 2px solid #000000;
+  transition: opacity 0.15s ease;
+}
+.pulse-btn-secondary:hover {
+  opacity: 0.85;
+}
+
+/* Inverse Secondary */
+.pulse-btn-outline-purple {
+  background-color: #ffffff;
+  color: #5a3bbe;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  border: 2px solid #5a3bbe;
+}
+.pulse-btn-outline-purple:hover {
+  background-color: #5a3bbe;
+  color: #ffffff;
+}
+
+/* Input styles */
+.pulse-input {
+  background-color: #ffffff;
+  color: #000000;
+  border: 1px solid #000000;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  outline: none;
+}
+.pulse-input:focus {
+  border-color: #5a3bbe;
+  box-shadow: 0 0 0 1px #5a3bbe;
+}

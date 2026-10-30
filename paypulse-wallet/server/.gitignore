@@ -1,0 +1,16 @@
+# Environment files
+.env
+.env.local
+*.env
+
+# Dependencies
+node_modules/
+
+# Databases
+*.db
+*.db-journal
+*.sqlite
+
+# Logs
+*.log
+logs/
