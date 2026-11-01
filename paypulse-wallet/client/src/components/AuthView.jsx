@@ -48,78 +48,79 @@ export default function AuthView({ onAuthSuccess }) {
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4 text-black">
-      <div className="w-full max-w-sm border-2 border-black rounded-2xl p-6 bg-white shadow-none">
-        {/* App Title */}
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-black text-[#5a3bbe] tracking-tight">Pulse</h1>
-          <p className="text-xs font-bold text-black mt-1">Payment Platform</p>
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-brand">
+          <span className="brand-mark">p</span>
+          <span className="brand-name">pulse<span>.</span></span>
         </div>
+        <h1 className="auth-title">{isRegister ? 'Create your account' : 'Welcome to Pulse'}</h1>
+        <p className="auth-subtitle">A simpler way to move and manage your money.</p>
 
         {error && (
-          <div className="mb-4 p-2.5 border border-black bg-white text-xs font-bold text-black">
+          <div className="auth-error" role="alert">
             {error}
           </div>
         )}
 
-        {/* Google Sign In */}
         <button
           type="button"
           onClick={handleGoogleSignIn}
           disabled={loading}
-          className="w-full py-2.5 px-4 bg-white text-black font-bold text-xs border-2 border-black rounded-xl hover:bg-[#5a3bbe] hover:text-white hover:border-[#5a3bbe] transition-all flex items-center justify-center gap-2 mb-4"
+          className="google-button"
         >
-          <span>Google Sign In</span>
+          <span className="google-mark">G</span>
+          <span>Continue with Google</span>
         </button>
 
-        <div className="flex items-center my-4">
-          <div className="flex-1 border-t border-black"></div>
-          <span className="px-2 text-[10px] font-bold text-black uppercase">Or</span>
-          <div className="flex-1 border-t border-black"></div>
+        <div className="auth-divider">
+          <span>or continue with email</span>
         </div>
 
-        {/* Email & Password Form */}
-        <form onSubmit={handleEmailAuth} className="space-y-3">
+        <form onSubmit={handleEmailAuth} className="auth-form">
           <div>
-            <label className="block text-[11px] font-bold uppercase text-black mb-1">Email</label>
+            <label htmlFor="auth-email">Email address</label>
             <input
+              id="auth-email"
               type="email"
               required
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-black rounded-xl text-xs font-medium text-black outline-none focus:border-[#5a3bbe]"
+              placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase text-black mb-1">Password</label>
+            <label htmlFor="auth-password">Password</label>
             <input
+              id="auth-password"
               type="password"
               required
+              autoComplete={isRegister ? 'new-password' : 'current-password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-black rounded-xl text-xs font-medium text-black outline-none focus:border-[#5a3bbe]"
+              placeholder="Enter your password"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-[#5a3bbe] text-white font-bold text-xs rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 mt-4"
+            className="auth-submit"
           >
-            <span>{loading ? 'Processing' : isRegister ? 'Register' : 'Sign In'}</span>
+            <span>{loading ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </form>
 
-        <div className="mt-4 text-center">
+        <div className="auth-switch">
           <button
             type="button"
             onClick={() => {
               setIsRegister(!isRegister);
               setError('');
             }}
-            className="text-xs font-bold text-black hover:text-[#5a3bbe] underline"
           >
             {isRegister ? 'Already registered? Sign In' : 'New to Pulse? Register'}
           </button>

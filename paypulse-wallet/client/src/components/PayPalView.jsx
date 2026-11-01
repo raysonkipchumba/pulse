@@ -103,49 +103,41 @@ export default function PayPalView({ user, onDepositSuccess }) {
         console.error(err);
       }
     }).render(paypalContainerRef.current);
-  }, [sdkReady, amount, user.id]);
+  }, [sdkReady, amount, user.id, onDepositSuccess]);
 
   return (
-    <div className="space-y-6">
-      {/* 100% Opaque Header Card with color #5a3bbe */}
-      <div className="bg-[#5a3bbe] text-white p-6 rounded-2xl">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xl font-black text-white">PayPal Integration</h2>
-          <CreditCard className="w-5 h-5 text-white" />
+    <div className="deposit-page">
+      <div className="deposit-hero">
+        <div className="deposit-hero-copy">
+          <span className="summary-eyebrow">TOP UP YOUR WALLET</span>
+          <h2>Add money to Pulse</h2>
+          <p>Choose an amount and securely complete your deposit with PayPal.</p>
         </div>
-        <p className="text-xs font-bold text-white">
-          Deposit funds directly into Pulse wallet using PayPal JavaScript SDK
-        </p>
+        <div className="deposit-hero-icon"><CreditCard size={22} /></div>
       </div>
 
-      {/* Amount Selector */}
-      <div className="border-2 border-black rounded-2xl p-5 bg-white space-y-4">
+      <div className="deposit-panel">
         <div>
-          <label className="block text-xs font-black uppercase text-black mb-1">
-            Deposit Amount (USD)
+          <label htmlFor="deposit-amount">
+            Deposit amount <span>(USD)</span>
           </label>
           <input
+            id="deposit-amount"
             type="number"
             min="1.00"
             step="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full text-2xl font-black px-4 py-2 bg-white border-2 border-black rounded-xl text-black outline-none focus:border-[#5a3bbe]"
           />
         </div>
 
-        {/* Quick Amounts */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="deposit-presets">
           {['10.00', '25.00', '50.00', '100.00'].map((preset) => (
             <button
               key={preset}
               type="button"
               onClick={() => setAmount(preset)}
-              className={`py-2 text-xs font-bold rounded-lg border transition-all ${
-                amount === preset
-                  ? 'bg-[#5a3bbe] text-white border-[#5a3bbe]'
-                  : 'bg-white text-black border-black hover:border-[#5a3bbe]'
-              }`}
+              className={amount === preset ? 'selected' : ''}
             >
               ${preset}
             </button>
@@ -153,14 +145,14 @@ export default function PayPalView({ user, onDepositSuccess }) {
         </div>
 
         {statusMessage && (
-          <div className="p-3 border-2 border-black rounded-xl text-xs font-bold text-black bg-white">
+          <div className="deposit-status" role="status">
             {statusMessage}
           </div>
         )}
 
-        {/* PayPal SDK Button Container */}
-        <div className="pt-2">
-          <div ref={paypalContainerRef} className="w-full min-h-[120px]" />
+        {isProcessing && <div className="deposit-status" role="status">Payment in progress…</div>}
+        <div className="paypal-button-wrap">
+          <div ref={paypalContainerRef} />
         </div>
       </div>
     </div>

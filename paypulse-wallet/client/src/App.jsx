@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import AuthView from './components/AuthView';
 import WalletView from './components/WalletView';
+import ActivityView from './components/ActivityView';
 import PayPalView from './components/PayPalView';
 import AssistantView from './components/AssistantView';
 import SendModal from './components/SendModal';
+import { LogOut } from 'lucide-react';
 import { auth, onAuthStateChanged, signOut } from './firebase';
 import { api } from './services/api';
 
@@ -59,16 +61,17 @@ export default function App() {
     }
   };
 
-  const handleDepositSuccess = async () => {
+  const handleDepositSuccess = useCallback(async () => {
     if (firebaseUser) {
       await syncAndLoadUserData(firebaseUser);
     }
-  };
+  }, [firebaseUser, syncAndLoadUserData]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center text-black text-xs font-bold">
-        Pulse Loading...
+      <div className="loading-screen">
+        <div className="loading-mark">P</div>
+        <span>Getting your wallet ready…</span>
       </div>
     );
   }
@@ -77,21 +80,61 @@ export default function App() {
     return <AuthView onAuthSuccess={(user) => setFirebaseUser(user)} />;
   }
 
+  const pageTitles = {
+    wallet: 'Overview',
+    activity: 'Activity',
+    paypal: 'Add money',
+    ai: 'Pulse assistant'
+  };
+
   return (
-    <div className="min-h-screen bg-white text-black flex flex-col font-sans">
-      {/* Top Navbar */}
+    <div className="app-shell">
       <Navbar
         user={pulseUser}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onSignOut={handleSignOut}
       />
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 bg-white">
+      <div className="app-content">
+        <header className="topbar">
+          <div className="topbar-heading">
+            <span className="eyebrow">YOUR MONEY, IN MOTION</span>
+            <h1>{pageTitles[activeTab]}</h1>
+          </div>
+          <div className="topbar-actions">
+            <span className="secure-label"><span className="secure-dot" /> Secure account</span>
+            <button
+              type="button"
+              className="icon-button mobile-signout"
+              onClick={handleSignOut}
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <LogOut size={18} />
+            </button>
+            <div className="topbar-avatar" aria-label={pulseUser?.name || 'Your account'}>
+              {pulseUser?.avatar ? (
+                <img src={pulseUser.avatar} alt="" />
+              ) : (
+                (pulseUser?.name || pulseUser?.email || 'U')[0].toUpperCase()
+              )}
+            </div>
+          </div>
+        </header>
+        <main className="page-content">
         {activeTab === 'wallet' && (
           <WalletView
             user={pulseUser}
+            transactions={transactions}
+            onOpenSend={() => setIsSendOpen(true)}
+            onOpenPayPal={() => setActiveTab('paypal')}
+            onViewActivity={() => setActiveTab('activity')}
+            onAskAssistant={() => setActiveTab('ai')}
+          />
+        )}
+
+        {activeTab === 'activity' && (
+          <ActivityView
             transactions={transactions}
             onOpenSend={() => setIsSendOpen(true)}
             onOpenPayPal={() => setActiveTab('paypal')}
@@ -108,14 +151,13 @@ export default function App() {
         {activeTab === 'ai' && (
           <AssistantView user={pulseUser} />
         )}
-      </main>
+        </main>
+        <footer className="app-footer">
+          <span>Pulse Financial</span>
+          <span>Your wallet, all in one place</span>
+        </footer>
+      </div>
 
-      {/* Footer */}
-      <footer className="border-t-2 border-black bg-white py-3 text-center text-xs font-bold text-black">
-        Pulse • Real Payments • PayPal SDK
-      </footer>
-
-      {/* Send Modal */}
       <SendModal
         isOpen={isSendOpen}
         onClose={() => setIsSendOpen(false)}

@@ -1,68 +1,74 @@
 import React from 'react';
-import { LogOut } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeftRight, LayoutDashboard, LogOut, Sparkles } from 'lucide-react';
+
+const navigation = [
+  { id: 'wallet', label: 'Overview', icon: LayoutDashboard },
+  { id: 'activity', label: 'Activity', icon: ArrowLeftRight },
+  { id: 'paypal', label: 'Add money', icon: ArrowDownLeft },
+  { id: 'ai', label: 'Pulse assistant', icon: Sparkles }
+];
 
 export default function Navbar({ user, activeTab, setActiveTab, onSignOut }) {
+  const initials = (user?.name || user?.email || 'U')
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
   return (
-    <header className="w-full bg-white border-b-2 border-[#5a3bbe] px-4 py-3">
-      <div className="max-w-4xl mx-auto flex items-center justify-between">
-        {/* Brand */}
-        <div className="flex items-center gap-6">
-          <div 
-            onClick={() => setActiveTab('wallet')}
-            className="text-2xl font-black tracking-tight text-[#5a3bbe] cursor-pointer"
-          >
-            Pulse
-          </div>
+    <aside className="sidebar">
+      <button
+        type="button"
+        className="brand"
+        onClick={() => setActiveTab('wallet')}
+        aria-label="Pulse home"
+      >
+        <span className="brand-mark">p</span>
+        <span className="brand-name">pulse<span>.</span></span>
+      </button>
 
-          {/* Navigation Tabs */}
-          <nav className="flex items-center gap-2">
-            {['wallet', 'paypal', 'ai'].map((tab) => {
-              const isActive = activeTab === tab;
-              const label = tab === 'wallet' ? 'Wallet' : tab === 'paypal' ? 'PayPal' : 'AI';
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                    isActive 
-                      ? 'bg-[#5a3bbe] text-white' 
-                      : 'bg-white text-black border border-black hover:bg-[#5a3bbe] hover:text-white hover:border-[#5a3bbe]'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        {/* User & Sign Out */}
-        <div className="flex items-center gap-3">
-          {user?.avatar ? (
-            <img 
-              src={user.avatar} 
-              alt={user.name || 'User'} 
-              className="w-8 h-8 rounded-full border border-black object-cover"
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-[#5a3bbe] text-white flex items-center justify-center text-xs font-bold">
-              {(user?.name || user?.email || 'U')[0].toUpperCase()}
-            </div>
-          )}
-
-          <span className="hidden sm:inline text-xs font-bold text-black max-w-[120px] truncate">
-            {user?.name || user?.email}
-          </span>
-
+      <div className="sidebar-label">MENU</div>
+      <nav className="side-nav" aria-label="Main navigation">
+        {navigation.map(({ id, label, icon: Icon }) => (
           <button
-            onClick={onSignOut}
-            className="p-1.5 text-black hover:text-[#5a3bbe] transition-colors"
-            title="Sign Out"
+            type="button"
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`nav-item ${activeTab === id ? 'active' : ''}`}
+            aria-current={activeTab === id ? 'page' : undefined}
           >
-            <LogOut className="w-4 h-4" />
+            <Icon size={18} strokeWidth={1.8} />
+            <span>{label}</span>
+            {id === 'ai' && <span className="nav-new">NEW</span>}
           </button>
-        </div>
+        ))}
+      </nav>
+
+      <div className="sidebar-spacer" />
+      <div className="sidebar-promo">
+        <div className="promo-icon"><Sparkles size={17} /></div>
+        <p>Money made simpler.</p>
+        <span>Everything you need, all in one place.</span>
       </div>
-    </header>
+      <div className="sidebar-account">
+        <div className="account-avatar">
+          {user?.avatar ? <img src={user.avatar} alt="" /> : initials}
+        </div>
+        <div className="account-copy">
+          <strong>{user?.name || 'Your account'}</strong>
+          <span>{user?.email || user?.tag || 'Pulse member'}</span>
+        </div>
+        <button
+          type="button"
+          className="signout-button"
+          onClick={onSignOut}
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut size={17} />
+        </button>
+      </div>
+    </aside>
   );
 }

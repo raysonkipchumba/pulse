@@ -51,81 +51,85 @@ export default function SendModal({ isOpen, onClose, user, onSendSuccess }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+    <div className="send-overlay">
       <div 
-        className="w-full max-w-sm bg-white border-2 border-black rounded-2xl p-5 text-black shadow-none relative"
+        className="send-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="send-dialog-title"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b-2 border-black mb-4">
-          <h3 className="text-sm font-black uppercase text-black">
+        <div className="send-dialog-header">
+          <h3 id="send-dialog-title">
             Send Money
           </h3>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 text-black hover:text-[#5a3bbe]"
+            className="send-close"
+            aria-label="Close"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {error && (
-          <div className="mb-3 p-2 border border-black bg-white text-xs font-bold text-black">
+          <div className="send-error" role="alert">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} className="send-form">
           <div>
-            <label className="block text-[11px] font-bold uppercase text-black mb-1">
+            <label htmlFor="send-recipient">
               Recipient Email or Tag
             </label>
             <input
+              id="send-recipient"
               type="text"
               required
               placeholder="e.g. user@domain.com or @tag"
               value={recipient}
               onChange={(e) => setRecipient(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-black rounded-xl text-xs font-medium text-black outline-none focus:border-[#5a3bbe]"
             />
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-[11px] font-bold uppercase text-black">
+            <div className="send-amount-label">
+              <label htmlFor="send-amount">
                 Amount (USD)
               </label>
-              <span className="text-[10px] font-bold text-black">
+              <span>
                 Max: ${(user?.balance || 0).toFixed(2)}
               </span>
             </div>
             <input
+              id="send-amount"
               type="number"
               step="0.01"
               min="0.01"
               required
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-black rounded-xl text-lg font-black text-black outline-none focus:border-[#5a3bbe]"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase text-black mb-1">
+            <label htmlFor="send-note">
               Note (Optional)
             </label>
             <input
+              id="send-note"
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-black rounded-xl text-xs font-medium text-black outline-none focus:border-[#5a3bbe]"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-2.5 bg-[#5a3bbe] text-white font-bold text-xs rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+            className="send-submit"
           >
             <Send className="w-3.5 h-3.5" />
             <span>{loading ? 'Processing...' : 'Confirm Transfer'}</span>

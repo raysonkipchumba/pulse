@@ -32,57 +32,46 @@ export default function AssistantView({ user }) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* 100% Opaque Header Card in #5a3bbe */}
-      <div className="bg-[#5a3bbe] text-white p-6 rounded-2xl">
-        <h2 className="text-xl font-black text-white">AI Assistant</h2>
-        <p className="text-xs font-bold text-white mt-1">
-          Instant financial and payment support powered by Gemini
-        </p>
+    <div className="assistant-page">
+      <div className="assistant-hero">
+        <span className="assistant-sparkle"><Send size={17} /></span>
+        <span className="summary-eyebrow">YOUR PERSONAL MONEY COMPANION</span>
+        <h2>Meet Pulse AI</h2>
+        <p>Ask a question about your wallet, transfers, or payments.</p>
       </div>
 
-      {/* Chat Messages */}
-      <div className="border-2 border-black rounded-2xl p-4 bg-white min-h-[350px] max-h-[500px] overflow-y-auto space-y-3 flex flex-col justify-between">
-        <div className="space-y-3">
+      <div className="assistant-chat">
+        <div className="assistant-messages">
           {messages.map((msg, idx) => (
             <div
               key={idx}
-              className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`message-row ${msg.sender === 'user' ? 'user-message' : ''}`}
             >
-              <div
-                className={`max-w-[80%] p-3 rounded-xl text-xs font-bold ${
-                  msg.sender === 'user'
-                    ? 'bg-[#5a3bbe] text-white'
-                    : 'bg-white text-black border-2 border-black'
-                }`}
-              >
+              <div className="message-bubble">
                 {msg.text}
               </div>
             </div>
           ))}
 
           {loading && (
-            <div className="flex justify-start">
-              <div className="p-3 rounded-xl text-xs font-bold bg-white text-black border-2 border-black">
-                Processing query...
-              </div>
+            <div className="message-row">
+              <div className="message-bubble">Thinking…</div>
             </div>
           )}
         </div>
 
-        {/* Input Form */}
-        <form onSubmit={handleSend} className="flex gap-2 pt-3 border-t-2 border-black">
+        <form onSubmit={handleSend} className="assistant-input">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Enter query..."
-            className="flex-1 px-3 py-2 bg-white border border-black rounded-xl text-xs font-medium text-black outline-none focus:border-[#5a3bbe]"
+            placeholder="Ask anything about your wallet…"
+            aria-label="Ask Pulse AI"
           />
           <button
             type="submit"
             disabled={loading}
-            className="px-4 py-2 bg-[#5a3bbe] text-white rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center"
+            aria-label="Send message"
           >
             <Send className="w-4 h-4" />
           </button>
