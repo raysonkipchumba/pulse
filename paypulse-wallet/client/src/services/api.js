@@ -57,6 +57,7 @@ export const api = {
   },
 
   async askAI(userId, prompt) {
+    if (!userId) throw new Error('A signed-in account is required to use Pulse AI');
     const res = await fetch(`${BASE_URL}/ai/assistant`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

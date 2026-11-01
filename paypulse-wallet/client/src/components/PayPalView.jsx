@@ -109,7 +109,6 @@ export default function PayPalView({ user, onDepositSuccess }) {
     <div className="deposit-page">
       <div className="deposit-hero">
         <div className="deposit-hero-copy">
-          <span className="summary-eyebrow">TOP UP YOUR WALLET</span>
           <h2>Add money to Pulse</h2>
           <p>Choose an amount and securely complete your deposit with PayPal.</p>
         </div>

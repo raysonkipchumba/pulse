@@ -64,7 +64,6 @@ export default function ActivityView({ transactions = [], onOpenSend, onOpenPayP
     <div className="activity-page">
       <section className="activity-summary">
         <div>
-          <span className="summary-eyebrow">YOUR WALLET HISTORY</span>
           <h2>Every move, in one place.</h2>
           <p>Search, review, and export your Pulse transactions.</p>
         </div>

@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { Send } from 'lucide-react';
 import { api } from '../services/api';
 
-export default function AssistantView({ user }) {
+export default function AssistantView({ user, userId }) {
   const [messages, setMessages] = useState([
     {
       sender: 'assistant',
-      text: 'Pulse AI Assistant active. State your request regarding wallet, transfers, or PayPal.'
+      text: 'Hi, I’m Pulse AI. Ask me about your wallet, transfers, or payments.'
     }
   ]);
   const [input, setInput] = useState('');
@@ -15,6 +15,13 @@ export default function AssistantView({ user }) {
   const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
+    if (!userId && !user?.id) {
+      setMessages((prev) => [...prev, {
+        sender: 'assistant',
+        text: 'Your signed-in account is still loading. Please try again in a moment.'
+      }]);
+      return;
+    }
 
     const userText = input.trim();
     setInput('');
@@ -22,7 +29,7 @@ export default function AssistantView({ user }) {
     setLoading(true);
 
     try {
-      const data = await api.askAI(user.id, userText);
+      const data = await api.askAI(userId || user?.id, userText);
       setMessages((prev) => [...prev, { sender: 'assistant', text: data.reply }]);
     } catch (err) {
       setMessages((prev) => [...prev, { sender: 'assistant', text: `Error: ${err.message}` }]);
@@ -35,7 +42,6 @@ export default function AssistantView({ user }) {
     <div className="assistant-page">
       <div className="assistant-hero">
         <span className="assistant-sparkle"><Send size={17} /></span>
-        <span className="summary-eyebrow">YOUR PERSONAL MONEY COMPANION</span>
         <h2>Meet Pulse AI</h2>
         <p>Ask a question about your wallet, transfers, or payments.</p>
       </div>

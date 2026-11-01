@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from './components/Navbar';
 import AuthView from './components/AuthView';
 import WalletView from './components/WalletView';
@@ -6,7 +6,7 @@ import ActivityView from './components/ActivityView';
 import PayPalView from './components/PayPalView';
 import AssistantView from './components/AssistantView';
 import SendModal from './components/SendModal';
-import { LogOut } from 'lucide-react';
+import { Check, ChevronDown, Copy, LogOut } from 'lucide-react';
 import { auth, onAuthStateChanged, signOut } from './firebase';
 import { api } from './services/api';
 
@@ -16,36 +16,65 @@ export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [activeTab, setActiveTab] = useState('wallet');
   const [isSendOpen, setIsSendOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profileTagCopied, setProfileTagCopied] = useState(false);
+  const [profileTagCopyError, setProfileTagCopyError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
+  const profileMenuRef = useRef(null);
 
-  // Sync user and fetch transactions
+  useEffect(() => {
+    const closeProfileMenu = (event) => {
+      if (event.type === 'keydown' && event.key === 'Escape') {
+        setIsProfileOpen(false);
+      } else if (event.type === 'pointerdown' && !profileMenuRef.current?.contains(event.target)) {
+        setIsProfileOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', closeProfileMenu);
+    document.addEventListener('keydown', closeProfileMenu);
+    return () => {
+      document.removeEventListener('pointerdown', closeProfileMenu);
+      document.removeEventListener('keydown', closeProfileMenu);
+    };
+  }, []);
+
   const syncAndLoadUserData = useCallback(async (fbUser) => {
-    try {
-      const synced = await api.syncUser({
-        uid: fbUser.uid,
-        email: fbUser.email,
-        name: fbUser.displayName || fbUser.email.split('@')[0],
-        avatar: fbUser.photoURL || null
-      });
-      setPulseUser(synced);
-
-      const txs = await api.getTransactions(fbUser.uid);
-      setTransactions(txs);
-    } catch (err) {
-      console.error('User load error:', err);
+    const synced = await api.syncUser({
+      uid: fbUser.uid,
+      email: fbUser.email,
+      name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Pulse member',
+      avatar: fbUser.photoURL || null
+    });
+    if (!synced?.id) {
+      throw new Error('Your account could not be loaded. Please try again.');
     }
+    const txs = await api.getTransactions(fbUser.uid);
+    setPulseUser(synced);
+    setTransactions(txs);
   }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
-      if (user) {
-        await syncAndLoadUserData(user);
-      } else {
+      setLoadError('');
+      setLoading(true);
+      if (!user) {
         setPulseUser(null);
         setTransactions([]);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      try {
+        await syncAndLoadUserData(user);
+      } catch (err) {
+        console.error('User load error:', err);
+        setLoadError(err.message || 'Unable to load your account. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     });
 
     return () => unsubscribe();
@@ -53,17 +82,59 @@ export default function App() {
 
   const handleSignOut = async () => {
     await signOut(auth);
+    setIsProfileOpen(false);
+  };
+
+  const handleProfileTagCopy = async () => {
+    if (!pulseUser?.tag) return;
+    if (!navigator.clipboard) {
+      setProfileTagCopyError('Copy is unavailable in this browser.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(pulseUser.tag);
+      setProfileTagCopied(true);
+      setProfileTagCopyError('');
+      window.setTimeout(() => setProfileTagCopied(false), 1800);
+    } catch (err) {
+      console.error('Unable to copy account tag:', err);
+      setProfileTagCopyError('Could not copy account tag.');
+    }
+  };
+
+  const handleRetryLoad = async () => {
+    if (!firebaseUser) return;
+    setLoading(true);
+    setLoadError('');
+    try {
+      await syncAndLoadUserData(firebaseUser);
+    } catch (err) {
+      console.error('User load retry error:', err);
+      setLoadError(err.message || 'Unable to load your account. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleTransferSuccess = async () => {
     if (firebaseUser) {
-      await syncAndLoadUserData(firebaseUser);
+      try {
+        await syncAndLoadUserData(firebaseUser);
+      } catch (err) {
+        console.error('Wallet refresh error:', err);
+        setLoadError(err.message || 'Unable to refresh your wallet.');
+      }
     }
   };
 
   const handleDepositSuccess = useCallback(async () => {
     if (firebaseUser) {
-      await syncAndLoadUserData(firebaseUser);
+      try {
+        await syncAndLoadUserData(firebaseUser);
+      } catch (err) {
+        console.error('Wallet refresh error:', err);
+        setLoadError(err.message || 'Unable to refresh your wallet.');
+      }
     }
   }, [firebaseUser, syncAndLoadUserData]);
 
@@ -71,13 +142,26 @@ export default function App() {
     return (
       <div className="loading-screen">
         <div className="loading-mark">P</div>
-        <span>Getting your wallet ready…</span>
+        <span>Loading your account...</span>
       </div>
     );
   }
 
   if (!firebaseUser) {
-    return <AuthView onAuthSuccess={(user) => setFirebaseUser(user)} />;
+    return <AuthView onAuthSuccess={() => setLoading(true)} />;
+  }
+
+  if (loadError || !pulseUser) {
+    return (
+      <div className="account-load-screen">
+        <div className="account-load-card">
+          <div className="brand-mark">p</div>
+          <h1>We couldn't load your account</h1>
+          <p>{loadError || 'Your account is still being prepared. Please try again.'}</p>
+          <button type="button" onClick={handleRetryLoad}>Try again</button>
+        </div>
+      </div>
+    );
   }
 
   const pageTitles = {
@@ -98,25 +182,55 @@ export default function App() {
       <div className="app-content">
         <header className="topbar">
           <div className="topbar-heading">
-            <span className="eyebrow">YOUR MONEY, IN MOTION</span>
             <h1>{pageTitles[activeTab]}</h1>
           </div>
           <div className="topbar-actions">
-            <span className="secure-label"><span className="secure-dot" /> Secure account</span>
-            <button
-              type="button"
-              className="icon-button mobile-signout"
-              onClick={handleSignOut}
-              aria-label="Sign out"
-              title="Sign out"
-            >
-              <LogOut size={18} />
-            </button>
-            <div className="topbar-avatar" aria-label={pulseUser?.name || 'Your account'}>
-              {pulseUser?.avatar ? (
-                <img src={pulseUser.avatar} alt="" />
-              ) : (
-                (pulseUser?.name || pulseUser?.email || 'U')[0].toUpperCase()
+            <div className="profile-menu" ref={profileMenuRef}>
+              <button
+                type="button"
+                className="profile-trigger"
+                onClick={() => setIsProfileOpen((open) => !open)}
+                aria-label="Open account menu"
+                aria-expanded={isProfileOpen}
+                aria-haspopup="dialog"
+              >
+                <span className="topbar-avatar">
+                  {pulseUser.avatar ? (
+                    <img src={pulseUser.avatar} alt="" />
+                  ) : (
+                    (pulseUser.name || pulseUser.email || 'U')[0].toUpperCase()
+                  )}
+                </span>
+                <ChevronDown size={15} />
+              </button>
+              {isProfileOpen && (
+                <div className="profile-dropdown" role="dialog" aria-label="Account profile">
+                  <div className="profile-details">
+                    <strong>{pulseUser.name || 'Pulse member'}</strong>
+                    <span>{pulseUser.email || firebaseUser.email}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="profile-tag"
+                    onClick={handleProfileTagCopy}
+                    aria-label={profileTagCopied ? 'Account tag copied' : 'Copy account tag'}
+                  >
+                    <span>{pulseUser.tag || 'Account tag unavailable'}</span>
+                    {profileTagCopied ? <Check size={15} /> : <Copy size={15} />}
+                  </button>
+                  {profileTagCopyError && <p className="profile-copy-error" role="status">{profileTagCopyError}</p>}
+                  <div className="profile-status">
+                    {pulseUser.account_status || 'ACTIVE'} account
+                  </div>
+                  <button
+                    type="button"
+                    className="profile-signout"
+                    onClick={handleSignOut}
+                  >
+                    <LogOut size={16} />
+                    Sign out
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -149,7 +263,7 @@ export default function App() {
         )}
 
         {activeTab === 'ai' && (
-          <AssistantView user={pulseUser} />
+          <AssistantView user={pulseUser} userId={firebaseUser.uid} />
         )}
         </main>
         <footer className="app-footer">

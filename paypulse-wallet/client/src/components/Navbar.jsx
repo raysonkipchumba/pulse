@@ -25,10 +25,9 @@ export default function Navbar({ user, activeTab, setActiveTab, onSignOut }) {
         aria-label="Pulse home"
       >
         <span className="brand-mark">p</span>
-        <span className="brand-name">pulse<span>.</span></span>
+        <span className="brand-name">pulse</span>
       </button>
 
-      <div className="sidebar-label">MENU</div>
       <nav className="side-nav" aria-label="Main navigation">
         {navigation.map(({ id, label, icon: Icon }) => (
           <button
@@ -40,7 +39,6 @@ export default function Navbar({ user, activeTab, setActiveTab, onSignOut }) {
           >
             <Icon size={18} strokeWidth={1.8} />
             <span>{label}</span>
-            {id === 'ai' && <span className="nav-new">NEW</span>}
           </button>
         ))}
       </nav>

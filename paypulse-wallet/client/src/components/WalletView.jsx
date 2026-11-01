@@ -72,7 +72,7 @@ function TransactionRow({ transaction }) {
       </div>
       <div className="transaction-main">
         <strong>{label}</strong>
-        <span>{transaction.note || (credit ? 'Money received' : 'Transfer')} · {new Date(transaction.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+        <span>{transaction.note || (credit ? 'Money received' : 'Transfer')}, {new Date(transaction.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
       </div>
       <div className="transaction-amount">
         <strong className={credit ? 'positive' : ''}>{credit ? '+' : '−'}${money(transaction.amount)}</strong>
@@ -122,11 +122,10 @@ export default function WalletView({ user, transactions = [], onOpenSend, onOpen
     <div className="dashboard">
       <section className="welcome-row">
         <div>
-          <h2>Welcome back, {displayName} <span className="wave">✦</span></h2>
+          <h2>Welcome back, {displayName}</h2>
           <p>Here’s what’s happening with your money today.</p>
         </div>
         <button type="button" className="date-pill">
-          <span className="date-indicator" />
           {today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
         </button>
       </section>
@@ -148,7 +147,7 @@ export default function WalletView({ user, transactions = [], onOpenSend, onOpen
             </div>
             <span className="balance-currency">USD <ChevronRight size={13} /></span>
           </div>
-          <div className="balance-amount">{balanceVisible ? `$${money(user?.balance)}` : '••••••'}</div>
+          <div className="balance-amount">{balanceVisible ? `$${money(user?.balance)}` : 'Hidden'}</div>
           <div className="balance-footer">
             <div>
               <span className="balance-label">PULSE ACCOUNT</span>
@@ -214,7 +213,6 @@ export default function WalletView({ user, transactions = [], onOpenSend, onOpen
 
         <article className="panel insight-panel">
           <div className="insight-decoration"><Sparkles size={20} /></div>
-          <span className="insight-kicker">PULSE INSIGHT</span>
           <h3>Your money,<br />at a glance.</h3>
           <p>You’ve made {currentMonthTransactions.length} transaction{currentMonthTransactions.length === 1 ? '' : 's'} this month. Keep checking in to stay on top of your finances.</p>
           <button type="button" onClick={onAskAssistant}>
