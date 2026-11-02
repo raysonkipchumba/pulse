@@ -474,6 +474,30 @@ input:focus-visible {
   padding: 28px 0 42px;
 }
 
+.account-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 13px;
+  color: #80621d;
+  border: 1px solid #f1e4be;
+  border-radius: 10px;
+  background: #fffaf0;
+  font-size: 10px;
+}
+
+.account-notice button {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  color: #7354dc;
+  border: 1px solid #e6def9;
+  border-radius: 7px;
+  background: white;
+  font-size: 9px;
+}
+
 .app-footer {
   display: flex;
   align-items: center;

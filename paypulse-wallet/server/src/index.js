@@ -33,18 +33,28 @@ app.get('/api/config', (req, res) => {
 app.post('/api/auth/sync', (req, res) => {
   try {
     const { uid, email, name, avatar } = req.body;
-    if (!uid || !email) {
+    if (typeof uid !== 'string' || !uid.trim() || typeof email !== 'string' || !email.trim()) {
       return res.status(400).json({ error: 'UID and email required' });
     }
 
     let user = db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
 
     if (!user) {
-      const cleanTag = '@' + (email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') || 'user');
+      const username = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') || 'user';
+      let tag = `@${username}`;
+      if (db.prepare('SELECT 1 FROM users WHERE tag = ?').get(tag)) {
+        const uidSuffix = uid.replace(/[^a-zA-Z0-9_]/g, '') || 'account';
+        tag = `@${username}_${uidSuffix}`;
+        let attempt = 1;
+        while (db.prepare('SELECT 1 FROM users WHERE tag = ?').get(tag)) {
+          tag = `@${username}_${uidSuffix}_${attempt}`;
+          attempt += 1;
+        }
+      }
       db.prepare(`
         INSERT INTO users (id, email, name, tag, avatar, balance, held_balance, dispute_rate_90d, id_verified, account_status)
         VALUES (?, ?, ?, ?, ?, 0.0, 0.0, 0.0, 1, 'ACTIVE')
-      `).run(uid, email, name || email.split('@')[0], cleanTag, avatar || null);
+      `).run(uid, email, name || username, tag, avatar || null);
 
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
     } else {

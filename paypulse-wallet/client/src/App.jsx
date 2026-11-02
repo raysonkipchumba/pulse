@@ -14,6 +14,7 @@ export default function App() {
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [pulseUser, setPulseUser] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [transactionsError, setTransactionsError] = useState('');
   const [activeTab, setActiveTab] = useState('wallet');
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -50,10 +51,29 @@ export default function App() {
     if (!synced?.id) {
       throw new Error('Your account could not be loaded. Please try again.');
     }
-    const txs = await api.getTransactions(fbUser.uid);
     setPulseUser(synced);
-    setTransactions(txs);
+
+    try {
+      const txs = await api.getTransactions(synced.id);
+      setTransactions(txs);
+      setTransactionsError('');
+    } catch (err) {
+      console.error('Transaction load error:', err);
+      setTransactionsError(err.message || 'Unable to load transactions.');
+    }
   }, []);
+
+  const handleRetryTransactions = async () => {
+    if (!pulseUser?.id) return;
+    try {
+      const txs = await api.getTransactions(pulseUser.id);
+      setTransactions(txs);
+      setTransactionsError('');
+    } catch (err) {
+      console.error('Transaction reload error:', err);
+      setTransactionsError(err.message || 'Unable to load transactions.');
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -63,10 +83,13 @@ export default function App() {
       if (!user) {
         setPulseUser(null);
         setTransactions([]);
+        setTransactionsError('');
         setLoading(false);
         return;
       }
 
+      setPulseUser(null);
+      setTransactions([]);
       try {
         await syncAndLoadUserData(user);
       } catch (err) {
@@ -236,6 +259,12 @@ export default function App() {
           </div>
         </header>
         <main className="page-content">
+        {transactionsError && (
+          <div className="account-notice" role="status">
+            <span>Some wallet activity could not be loaded: {transactionsError}</span>
+            <button type="button" onClick={handleRetryTransactions}>Retry</button>
+          </div>
+        )}
         {activeTab === 'wallet' && (
           <WalletView
             user={pulseUser}

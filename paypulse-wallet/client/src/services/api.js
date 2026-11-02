@@ -7,8 +7,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData)
     });
-    if (!res.ok) throw new Error('Failed to synchronize user');
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to synchronize user');
+    return data;
   },
 
   async getUser(id) {
@@ -19,8 +20,10 @@ export const api = {
 
   async getTransactions(userId) {
     const res = await fetch(`${BASE_URL}/transactions/${userId}`);
-    if (!res.ok) throw new Error('Failed to load transactions');
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load transactions');
+    if (!Array.isArray(data)) throw new Error('The server returned an invalid transaction list');
+    return data;
   },
 
   async transfer(payload) {
