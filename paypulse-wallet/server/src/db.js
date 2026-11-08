@@ -60,6 +60,48 @@ export function initDatabase() {
       ai_audit_explanation TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS checkout_assessments (
+      id TEXT PRIMARY KEY,
+      cart_hash TEXT NOT NULL,
+      high_risk INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS checkout_orders (
+      order_id TEXT PRIMARY KEY,
+      assessment_id TEXT NOT NULL,
+      cart_hash TEXT NOT NULL,
+      status TEXT DEFAULT 'CREATED',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS micro_pools (
+      id TEXT PRIMARY KEY,
+      owner_user_id TEXT,
+      target_amount REAL NOT NULL,
+      pooled_amount REAL DEFAULT 0,
+      reserved_amount REAL DEFAULT 0,
+      cart_json TEXT NOT NULL,
+      status TEXT DEFAULT 'OPEN',
+      expires_at TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS micro_pool_contributions (
+      id TEXT PRIMARY KEY,
+      pool_id TEXT NOT NULL,
+      paypal_order_id TEXT UNIQUE NOT NULL,
+      paypal_capture_id TEXT,
+      refund_request_id TEXT,
+      amount REAL NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (pool_id) REFERENCES micro_pools(id)
+    );
   `);
 
   console.log('Pulse production database initialized.');

@@ -1,25 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CreditCard } from 'lucide-react';
 import { api } from '../services/api';
-
-function loadPayPalScript(clientId) {
-  if (window.paypal) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const existing = document.getElementById('paypal-sdk-script');
-    if (existing) {
-      existing.addEventListener('load', resolve);
-      existing.addEventListener('error', reject);
-      return;
-    }
-    const script = document.createElement('script');
-    script.id = 'paypal-sdk-script';
-    script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&currency=USD`;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = (err) => reject(err);
-    document.body.appendChild(script);
-  });
-}
+import { loadPayPalScript } from '../services/paypalSdk';
 
 export default function PayPalView({ user, onDepositSuccess }) {
   const [amount, setAmount] = useState('25.00');

@@ -4,6 +4,7 @@ import AuthView from './components/AuthView';
 import WalletView from './components/WalletView';
 import ActivityView from './components/ActivityView';
 import PayPalView from './components/PayPalView';
+import CheckoutView from './components/CheckoutView';
 import AssistantView from './components/AssistantView';
 import SendModal from './components/SendModal';
 import { Check, ChevronDown, Copy, LogOut } from 'lucide-react';
@@ -15,7 +16,7 @@ export default function App() {
   const [pulseUser, setPulseUser] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [transactionsError, setTransactionsError] = useState('');
-  const [activeTab, setActiveTab] = useState('wallet');
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).has('pool') ? 'checkout' : 'wallet');
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileTagCopied, setProfileTagCopied] = useState(false);
@@ -191,6 +192,7 @@ export default function App() {
     wallet: 'Overview',
     activity: 'Activity',
     paypal: 'Add money',
+    checkout: 'Smart checkout',
     ai: 'Pulse assistant'
   };
 
@@ -289,6 +291,10 @@ export default function App() {
             user={pulseUser}
             onDepositSuccess={handleDepositSuccess}
           />
+        )}
+
+        {activeTab === 'checkout' && (
+          <CheckoutView user={pulseUser} />
         )}
 
         {activeTab === 'ai' && (

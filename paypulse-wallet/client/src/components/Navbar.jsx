@@ -1,10 +1,11 @@
 import React from 'react';
-import { ArrowDownLeft, ArrowLeftRight, LayoutDashboard, LogOut, Sparkles } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeftRight, LayoutDashboard, LogOut, ShoppingBag, Sparkles } from 'lucide-react';
 
 const navigation = [
   { id: 'wallet', label: 'Overview', icon: LayoutDashboard },
   { id: 'activity', label: 'Activity', icon: ArrowLeftRight },
   { id: 'paypal', label: 'Add money', icon: ArrowDownLeft },
+  { id: 'checkout', label: 'Smart checkout', icon: ShoppingBag },
   { id: 'ai', label: 'Pulse assistant', icon: Sparkles }
 ];
 

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
 
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
@@ -68,6 +69,25 @@ export async function createPayPalOrder(amount, currency = "USD") {
   return response.json();
 }
 
+export async function createPayPalCheckoutOrder(purchaseUnits) {
+  const token = await getPayPalAccessToken();
+  const response = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ intent: "CAPTURE", purchase_units: purchaseUnits })
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`PayPal Create Order Error: ${err}`);
+  }
+
+  return response.json();
+}
+
 export async function capturePayPalOrder(orderId) {
   const token = await getPayPalAccessToken();
   const response = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders/${orderId}/capture`, {
@@ -81,6 +101,26 @@ export async function capturePayPalOrder(orderId) {
   if (!response.ok) {
     const err = await response.text();
     throw new Error(`PayPal Capture Order Error: ${err}`);
+  }
+
+  return response.json();
+}
+
+export async function refundPayPalCapture(captureId, requestId = randomUUID()) {
+  const token = await getPayPalAccessToken();
+  const response = await fetch(`${PAYPAL_API_BASE}/v2/payments/captures/${encodeURIComponent(captureId)}/refund`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "PayPal-Request-Id": requestId
+    },
+    body: JSON.stringify({})
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`PayPal Refund Error: ${err}`);
   }
 
   return response.json();

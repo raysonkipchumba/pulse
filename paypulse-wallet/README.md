@@ -66,3 +66,25 @@ $$P(S \mid C, D) = \frac{P(C, D \mid S) P(S)}{P(C, D)} \geq 0.95$$
    ```bash
    git clone [https://github.com/raysonkipchumba/pulse.git](https://github.com/raysonkipchumba/pulse.git)
    cd pulse
+
+### Checkout Features Configuration
+
+Set these values in the server environment before using the advanced checkout tab:
+
+```env
+PAYPAL_CLIENT_ID=your-sandbox-client-id
+PAYPAL_SECRET=your-sandbox-secret
+PAYPAL_API_BASE=https://api-m.sandbox.paypal.com
+GEMINI_API_KEY=your-gemini-api-key
+CHECKOUT_MERCHANT_HISTORY_JSON={"generic paracetamol":{"averagePrice":0.10}}
+CHECKOUT_MERCHANT_PAYPAL_ID=merchant@example.com
+ECO_NGO_PAYPAL_ID=ngo@example.org
+```
+
+`GEMINI_API_KEY` enables the Sentinel transaction review and item-specific Eco-Route estimate. The server-side historical-data JSON is sent as context to the review model; it should be maintained from trusted merchant records, not browser input. Eco donations require PayPal multiparty checkout approval and a configured NGO receiver. Without an NGO receiver, opting into a donation will be rejected rather than silently routing it to the merchant.
+
+OmniPay uses the browser Web Speech APIs. Voice commands can edit the cart and prepare checkout, but browsers generally require a direct user click to open the PayPal payment window.
+
+Micro-Pools capture each contribution immediately. If the goal is missed, a server timer requests a full PayPal refund for every captured contribution and retries failed refunds after restart. If the goal is reached, funds remain captured by the configured PayPal merchant. This is not a regulated escrow or a delayed authorization hold; use PayPal sandbox credentials until the merchant, refund, and compliance flows have been verified.
+
+Sentinel is an automated warning, not a guarantee that a transaction is safe or fraudulent. Its risk decision depends on model output and the trusted historical context configured on the server.
