@@ -29,6 +29,7 @@ const OVERRIDE_PHRASE = 'I UNDERSTAND THE RISK';
 const DEFAULT_COUNTRY = 'US';
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || (process.env.NODE_ENV === 'production' ? undefined : true);
 const authBypass = process.env.NODE_ENV !== 'production' && !process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.FIREBASE_CLIENT_EMAIL && !process.env.FIREBASE_PRIVATE_KEY;
+let firebaseAdminInitialized = false;
 
 if (process.env.NODE_ENV === 'production' && !CLIENT_ORIGIN) {
   throw new Error('CLIENT_ORIGIN must be set when running in production.');
@@ -45,6 +46,7 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       credential: admin.credential.cert(serviceAccount),
       projectId: process.env.FIREBASE_PROJECT_ID || serviceAccountProjectId
     });
+    firebaseAdminInitialized = true;
   } catch (err) {
     throw new Error(`Invalid Firebase service account configuration: ${err.message}`);
   }
@@ -60,9 +62,10 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     }),
     projectId: process.env.FIREBASE_PROJECT_ID
   });
+  firebaseAdminInitialized = true;
 }
 
-if (!authBypass && admin.apps.length === 0) {
+if (!authBypass && !firebaseAdminInitialized) {
   throw new Error('Firebase Admin credentials are required. Configure FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY.');
 }
 
