@@ -37,7 +37,7 @@ The system operates in a continuous 4-phase loop:
 
 ## 🛠️ How We Built It
 We built Aura using a modern, decoupled architecture designed for agentic workflows:
-* **Frontend Workspace (Pulse):** We evolved the existing React-based repository into a dual-pane workspace, featuring a real-time negotiation chat on the left and the dynamic escrow status widget on the right.
+* **Frontend Workspace (Pulse):** We evolved the React-based repository into a dual-pane workspace, featuring a real-time negotiation chat on the left and the dynamic escrow status widget on the right.
 * **Backend & Financial Engine:** We used a Node.js/Express backend heavily integrated with the **PayPal REST APIs**. Instead of standard checkouts, we utilized the Orders API specifically for `intent: 'AUTHORIZE'` and the Captures API (`/v2/payments/authorizations/{id}/capture`) for delayed settlement.
 * **The AI Brain:** We integrated Google Gemini as the reasoning engine. We structured the AI's output using JSON schemas so that it could deterministically trigger the PayPal API endpoints based on chat context.
 

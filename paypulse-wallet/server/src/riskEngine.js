@@ -30,54 +30,50 @@ export function calculateRiskScore(acct, ev, dailyVolumes30d, todayVolume, lifet
   let score = 0.0;
   const reasons = [];
 
-  // 1. Volume spike against 30-day baseline
-  const z = zscore(todayVolume + ev.amount, dailyVolumes30d);
-  if (z > 3.0 && dailyVolumes30d.length >= 3) {
+  const baseline = Array.isArray(dailyVolumes30d) ? dailyVolumes30d : [];
+  const z = zscore((Number(todayVolume) || 0) + (Number(ev.amount) || 0), baseline);
+  if (z > 3.0 && baseline.length >= 3) {
     score += 0.30;
-    reasons.push("VOLUME_SPIKE");
+    reasons.push('VOLUME_SPIKE');
   }
 
-  // 2. Geography and Device signals
   let knownCountries = [];
   try {
     knownCountries = JSON.parse(acct.known_countries || '["US"]');
   } catch {
-    knownCountries = ["US"];
+    knownCountries = ['US'];
   }
 
   let knownDevices = [];
   try {
     knownDevices = JSON.parse(acct.known_devices || '["dev_primary"]');
   } catch {
-    knownDevices = ["dev_primary"];
+    knownDevices = ['dev_primary'];
   }
 
   if (ev.country && !knownCountries.includes(ev.country)) {
     score += 0.15;
-    reasons.push("NEW_COUNTRY");
+    reasons.push('NEW_COUNTRY');
   }
 
   if (ev.device_id && !knownDevices.includes(ev.device_id)) {
     score += 0.10;
-    reasons.push("NEW_DEVICE");
+    reasons.push('NEW_DEVICE');
   }
 
-  // 3. Dispute rate over 90 days
-  if (acct.dispute_rate_90d > 0.01) {
+  if (Number(acct.dispute_rate_90d || 0) > 0.01) {
     score += 0.25;
-    reasons.push("HIGH_DISPUTES");
+    reasons.push('HIGH_DISPUTES');
   }
 
-  // 4. Verification gap once volume is meaningful
-  if (acct.id_verified !== 1 && lifetimeVolume > 1000) {
+  if (Number(acct.id_verified || 0) !== 1 && Number(lifetimeVolume || 0) > 1000) {
     score += 0.20;
-    reasons.push("UNVERIFIED_VOLUME");
+    reasons.push('UNVERIFIED_VOLUME');
   }
 
-  // 5. Graph signal: links to flagged fraudulent accounts
-  if (acct.linked_bad_accounts > 0) {
+  if (Number(acct.linked_bad_accounts || 0) > 0) {
     score += 0.35;
-    reasons.push("LINKED_FRAUD_RING");
+    reasons.push('LINKED_FRAUD_RING');
   }
 
   return {
@@ -144,34 +140,27 @@ Task: Generate a concise, factual 2-sentence background audit log note and check
 export async function handleRiskPipeline(accountId, ev) {
   const acct = db.prepare('SELECT * FROM users WHERE id = ?').get(accountId);
   if (!acct) {
-    return { action: "ALLOW", score: 0.0, reasons: [] };
+    return { action: 'ALLOW', score: 0.0, reasons: [] };
   }
 
-  // Fetch last 30 daily volumes
   const dailyRows = db.prepare(`
-    SELECT volume FROM daily_volumes 
-    WHERE user_id = ? 
+    SELECT volume FROM daily_volumes
+    WHERE user_id = ? AND date < ?
     ORDER BY date DESC LIMIT 30
-  `).all(accountId);
-  const dailyVolumes30d = dailyRows.map(r => r.volume);
+  `).all(accountId, new Date().toISOString().slice(0, 10));
+  const dailyVolumes30d = dailyRows.map((r) => Number(r.volume || 0));
 
-  // Today volume
   const today = new Date().toISOString().slice(0, 10);
   const todayRow = db.prepare('SELECT volume FROM daily_volumes WHERE user_id = ? AND date = ?').get(accountId, today);
-  const todayVolume = todayRow ? todayRow.volume : 0.0;
+  const todayVolume = Number(todayRow ? todayRow.volume : 0);
 
-  // Lifetime volume
   const totalVolumeRow = db.prepare('SELECT SUM(amount) as total FROM transactions WHERE user_id = ?').get(accountId);
-  const lifetimeVolume = totalVolumeRow?.total || 0.0;
+  const lifetimeVolume = Number(totalVolumeRow?.total || 0);
 
-  // Evaluate algorithm
   const { score, reasons } = calculateRiskScore(acct, ev, dailyVolumes30d, todayVolume, lifetimeVolume);
   const action = decideAction(score);
-
-  // Generate AI grounded explanation for background audit trail
   const explanation = await generateGroundedExplanation(reasons, score, action, ev.amount);
 
-  // Log decision to database
   const decisionId = 'dec_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
   db.prepare(`
     INSERT INTO risk_decisions (id, account_id, event_id, event_type, score, reasons_json, action, ai_audit_explanation)
@@ -187,21 +176,18 @@ export async function handleRiskPipeline(accountId, ev) {
     explanation
   );
 
-  // Update today's volume in daily_volumes
   if (todayRow) {
-    db.prepare('UPDATE daily_volumes SET volume = volume + ? WHERE user_id = ? AND date = ?').run(ev.amount, accountId, today);
+    db.prepare('UPDATE daily_volumes SET volume = volume + ? WHERE user_id = ? AND date = ?').run(Number(ev.amount || 0), accountId, today);
   } else {
-    db.prepare('INSERT INTO daily_volumes (user_id, date, volume) VALUES (?, ?, ?)').run(accountId, today, ev.amount);
+    db.prepare('INSERT INTO daily_volumes (user_id, date, volume) VALUES (?, ?, ?)').run(accountId, today, Number(ev.amount || 0));
   }
 
-  // Apply proportionate action to account
-  if (action === "PARTIAL_HOLD") {
-    // Only holds the suspicious event amount; remainder remains accessible!
-    db.prepare('UPDATE users SET held_balance = held_balance + ?, account_status = "PARTIAL_HOLD" WHERE id = ?').run(ev.amount, accountId);
-  } else if (action === "LIMIT_ACCOUNT") {
-    db.prepare('UPDATE users SET account_status = "LIMITED" WHERE id = ?').run(accountId);
-  } else if (action === "STEP_UP") {
-    db.prepare('UPDATE users SET account_status = "STEP_UP" WHERE id = ?').run(accountId);
+  if (action === 'PARTIAL_HOLD') {
+    db.prepare('UPDATE users SET held_balance = held_balance + ?, account_status = ? WHERE id = ?').run(Number(ev.amount || 0), 'PARTIAL_HOLD', accountId);
+  } else if (action === 'LIMIT_ACCOUNT') {
+    db.prepare('UPDATE users SET account_status = ? WHERE id = ?').run('LIMITED', accountId);
+  } else if (action === 'STEP_UP') {
+    db.prepare('UPDATE users SET account_status = ? WHERE id = ?').run('STEP_UP', accountId);
   }
 
   return { action, score, reasons, explanation };

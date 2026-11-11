@@ -1,164 +1,137 @@
+import { auth } from '../firebase';
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
+async function getAuthHeaders(extraHeaders = {}) {
+  const headers = { ...extraHeaders };
+  const currentUser = auth.currentUser;
+  if (currentUser) {
+    const token = await currentUser.getIdToken().catch(() => '');
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+      headers['X-User-ID'] = currentUser.uid;
+    }
+  }
+  return headers;
+}
+
+async function jsonRequest(path, options = {}) {
+  const headers = await getAuthHeaders({
+    'Content-Type': 'application/json',
+    ...(options.headers || {})
+  });
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
 
 export const api = {
   async syncUser(userData) {
-    const res = await fetch(`${BASE_URL}/auth/sync`, {
+    return jsonRequest('/auth/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData)
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to synchronize user');
-    return data;
   },
 
   async getUser(id) {
-    const res = await fetch(`${BASE_URL}/user/${id}`);
-    if (!res.ok) throw new Error('User not found');
-    return res.json();
+    return jsonRequest(`/user/${encodeURIComponent(id)}`);
   },
 
   async getTransactions(userId) {
-    const res = await fetch(`${BASE_URL}/transactions/${userId}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load transactions');
+    const data = await jsonRequest(`/transactions/${encodeURIComponent(userId)}`);
     if (!Array.isArray(data)) throw new Error('The server returned an invalid transaction list');
     return data;
   },
 
   async transfer(payload) {
-    const res = await fetch(`${BASE_URL}/transfer`, {
+    return jsonRequest('/transfer', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Transfer failed');
-    return data;
   },
 
   async createPayPalOrder(amount) {
-    const res = await fetch(`${BASE_URL}/paypal/create-order`, {
+    return jsonRequest('/paypal/create-order', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to create PayPal order');
-    return data;
   },
 
   async capturePayPalOrder(orderId, userId) {
-    const res = await fetch(`${BASE_URL}/paypal/capture-order`, {
+    return jsonRequest('/paypal/capture-order', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderId, userId })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to capture PayPal payment');
-    return data;
   },
 
   async getPayPalConfig() {
-    const res = await fetch(`${BASE_URL}/config`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Unable to load payment configuration');
-    return data;
+    return jsonRequest('/config');
   },
 
   async estimateEcoImpact(cart) {
-    const res = await fetch(`${BASE_URL}/checkout/eco-estimate`, {
+    return jsonRequest('/checkout/eco-estimate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cart })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Carbon estimate failed');
-    return data;
   },
 
   async assessCheckoutRisk(cart) {
-    const res = await fetch(`${BASE_URL}/checkout/risk-check`, {
+    return jsonRequest('/checkout/risk-check', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cart })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Checkout risk review failed');
-    return data;
   },
 
   async createCheckoutOrder(payload) {
-    const res = await fetch(`${BASE_URL}/checkout/create-order`, {
+    return jsonRequest('/checkout/create-order', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to create checkout order');
-    return data;
   },
 
   async captureCheckoutOrder(orderId) {
-    const res = await fetch(`${BASE_URL}/checkout/capture-order`, {
+    return jsonRequest('/checkout/capture-order', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderId })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to capture checkout payment');
-    return data;
   },
 
   async createMicroPool(payload) {
-    const res = await fetch(`${BASE_URL}/micro-pools`, {
+    return jsonRequest('/micro-pools', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to create group pool');
-    return data;
   },
 
   async getMicroPool(id) {
-    const res = await fetch(`${BASE_URL}/micro-pools/${encodeURIComponent(id)}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Unable to load group pool');
-    return data;
+    return jsonRequest(`/micro-pools/${encodeURIComponent(id)}`);
   },
 
   async createPoolContributionOrder(poolId, payload) {
-    const res = await fetch(`${BASE_URL}/micro-pools/${encodeURIComponent(poolId)}/orders`, {
+    return jsonRequest(`/micro-pools/${encodeURIComponent(poolId)}/orders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to create pool contribution');
-    return data;
   },
 
   async capturePoolContribution(poolId, orderId) {
-    const res = await fetch(`${BASE_URL}/micro-pools/${encodeURIComponent(poolId)}/capture`, {
+    return jsonRequest(`/micro-pools/${encodeURIComponent(poolId)}/capture`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderId })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to capture pool contribution');
-    return data;
   },
 
   async askAI(userId, prompt) {
     if (!userId) throw new Error('A signed-in account is required to use Pulse AI');
-    const res = await fetch(`${BASE_URL}/ai/assistant`, {
+    return jsonRequest('/ai/assistant', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, prompt })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'AI assistant error');
-    return data;
   }
 };

@@ -16,8 +16,8 @@ export function initDatabase() {
       name TEXT NOT NULL,
       tag TEXT UNIQUE NOT NULL,
       avatar TEXT,
-      balance REAL DEFAULT 0.0,
-      held_balance REAL DEFAULT 0.0,
+      balance INTEGER DEFAULT 0,
+      held_balance INTEGER DEFAULT 0,
       dispute_rate_90d REAL DEFAULT 0.0,
       id_verified INTEGER DEFAULT 0,
       linked_bad_accounts INTEGER DEFAULT 0,
@@ -32,14 +32,14 @@ export function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL,
       date TEXT NOT NULL,
-      volume REAL DEFAULT 0.0
+      volume INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       type TEXT NOT NULL,
-      amount REAL NOT NULL,
+      amount INTEGER NOT NULL,
       currency TEXT DEFAULT 'USD',
       counterparty_name TEXT,
       counterparty_email TEXT,
@@ -75,6 +75,7 @@ export function initDatabase() {
       order_id TEXT PRIMARY KEY,
       assessment_id TEXT NOT NULL,
       cart_hash TEXT NOT NULL,
+      user_id TEXT,
       status TEXT DEFAULT 'CREATED',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
@@ -82,9 +83,9 @@ export function initDatabase() {
     CREATE TABLE IF NOT EXISTS micro_pools (
       id TEXT PRIMARY KEY,
       owner_user_id TEXT,
-      target_amount REAL NOT NULL,
-      pooled_amount REAL DEFAULT 0,
-      reserved_amount REAL DEFAULT 0,
+      target_amount INTEGER NOT NULL,
+      pooled_amount INTEGER DEFAULT 0,
+      reserved_amount INTEGER DEFAULT 0,
       cart_json TEXT NOT NULL,
       status TEXT DEFAULT 'OPEN',
       expires_at TEXT NOT NULL,
@@ -97,10 +98,35 @@ export function initDatabase() {
       paypal_order_id TEXT UNIQUE NOT NULL,
       paypal_capture_id TEXT,
       refund_request_id TEXT,
-      amount REAL NOT NULL,
+      amount INTEGER NOT NULL,
       status TEXT DEFAULT 'PENDING',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (pool_id) REFERENCES micro_pools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS paypal_orders (
+      order_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      status TEXT DEFAULT 'CREATED',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS processed_captures (
+      capture_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      credited INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS account_audit_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      amount INTEGER DEFAULT 0,
+      note TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
