@@ -6,11 +6,10 @@ async function getAuthHeaders(extraHeaders = {}) {
   const headers = { ...extraHeaders };
   const currentUser = auth.currentUser;
   if (currentUser) {
-    const token = await currentUser.getIdToken().catch(() => '');
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-      headers['X-User-ID'] = currentUser.uid;
-    }
+    const token = await currentUser.getIdToken();
+    if (!token) throw new Error('Unable to verify your Firebase session. Please sign in again.');
+    headers.Authorization = `Bearer ${token}`;
+    headers['X-User-ID'] = currentUser.uid;
   }
   return headers;
 }

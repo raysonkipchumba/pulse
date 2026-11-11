@@ -2,20 +2,27 @@
 
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #24213b;
-  background: #f7f7fc;
+  color: #0F172A;
+  background: #F5F7FA;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #24213b;
+  --primary: #0070E0;
+  --deep-navy: #003087;
+  --accent: #FFC439;
+  --ai-highlight: #7C3AED;
+  --success: #10B981;
+  --background: #F5F7FA;
+  --text: #0F172A;
+  --ink: var(--text);
   --muted: #89879b;
   --line: #eeedf4;
-  --purple: #7354dc;
-  --purple-dark: #5e40c9;
-  --lavender: #f1edff;
-  --mint: #35bd9b;
-  --mint-pale: #e9f8f3;
+  --purple: var(--primary);
+  --purple-dark: var(--deep-navy);
+  --lavender: #EAF3FF;
+  --mint: var(--success);
+  --mint-pale: #E9F9F2;
   --coral: #ff8e83;
-  --blue: #73b5ec;
+  --blue: var(--primary);
   --surface: #ffffff;
 }
 
@@ -26,7 +33,7 @@
 html {
   min-width: 320px;
   min-height: 100%;
-  background: #f7f7fc;
+  background: var(--background);
 }
 
 body {
@@ -35,8 +42,8 @@ body {
   margin: 0;
   color: var(--ink);
   background:
-    radial-gradient(ellipse at 86% 7%, rgba(218, 210, 255, 0.24), transparent 32rem),
-    #f7f7fc;
+    radial-gradient(ellipse at 86% 7%, rgba(0, 112, 224, 0.08), transparent 32rem),
+    var(--background);
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
 }
@@ -52,7 +59,7 @@ button {
 
 button:focus-visible,
 input:focus-visible {
-  outline: 3px solid rgba(115, 84, 220, 0.25);
+  outline: 3px solid rgba(0, 112, 224, 0.25);
   outline-offset: 2px;
 }
 
@@ -72,8 +79,8 @@ input:focus-visible {
   place-items: center;
   flex: 0 0 auto;
   color: #fff;
-  background: linear-gradient(140deg, #9276f4, #6243d0);
-  box-shadow: 0 7px 16px rgba(100, 71, 204, 0.22);
+  background: linear-gradient(140deg, var(--primary), var(--deep-navy));
+  box-shadow: 0 7px 16px rgba(0, 48, 135, 0.22);
 }
 
 .loading-mark {
@@ -1907,11 +1914,11 @@ input:focus-visible {
   width: 100%;
   min-height: 43px;
   margin-top: 4px;
-  color: white;
+  color: var(--deep-navy);
   border: 0;
   border-radius: 10px;
-  background: linear-gradient(110deg, #8364e4, #6948d1);
-  box-shadow: 0 7px 15px rgba(106, 74, 205, 0.17);
+  background: var(--accent);
+  box-shadow: 0 7px 15px rgba(0, 48, 135, 0.12);
   font-size: 11px;
   font-weight: 500;
   transition: filter 150ms ease, transform 150ms ease;
@@ -2129,8 +2136,8 @@ input:focus-visible {
   border: 1px solid #eae3fb;
   border-radius: 16px;
   background:
-    radial-gradient(ellipse at 97% 5%, rgba(255, 189, 168, 0.5), transparent 43%),
-    linear-gradient(110deg, #f1edff, #fff8f4);
+    radial-gradient(ellipse at 97% 5%, rgba(124, 58, 237, 0.12), transparent 43%),
+    linear-gradient(110deg, #F5F0FF, #FFFFFF);
 }
 
 .assistant-sparkle {
@@ -2138,7 +2145,7 @@ input:focus-visible {
   width: 35px;
   height: 35px;
   margin-bottom: 14px;
-  color: #855ed0;
+  color: var(--ai-highlight);
   border-radius: 11px;
   background: rgba(255, 255, 255, 0.76);
   place-items: center;
@@ -2191,9 +2198,9 @@ input:focus-visible {
 
 .user-message .message-bubble {
   color: white;
-  border-color: #8263df;
+  border-color: var(--ai-highlight);
   border-radius: 12px 12px 4px 12px;
-  background: linear-gradient(120deg, #8e71e9, #7151d3);
+  background: var(--ai-highlight);
 }
 
 .assistant-input {
@@ -2233,7 +2240,7 @@ input:focus-visible {
   color: #fff;
   border: 0;
   border-radius: 10px;
-  background: linear-gradient(135deg, #8d6fe8, #704fd0);
+  background: var(--ai-highlight);
   place-items: center;
 }
 
@@ -2536,9 +2543,9 @@ input:focus-visible {
 .primary-action {
   width: 100%;
   min-height: 45px;
-  color: #fff;
-  border-color: #3d7055;
-  background: #3d7055;
+  color: var(--deep-navy);
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .primary-action:disabled,

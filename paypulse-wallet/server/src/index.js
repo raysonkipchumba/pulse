@@ -37,18 +37,33 @@ if (process.env.NODE_ENV === 'production' && !CLIENT_ORIGIN) {
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    const serviceAccountProjectId = serviceAccount.project_id;
+    if (process.env.FIREBASE_PROJECT_ID && serviceAccountProjectId && process.env.FIREBASE_PROJECT_ID !== serviceAccountProjectId) {
+      throw new Error('FIREBASE_PROJECT_ID does not match the service account project_id.');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: process.env.FIREBASE_PROJECT_ID || serviceAccountProjectId
+    });
   } catch (err) {
-    console.error('Invalid FIREBASE_SERVICE_ACCOUNT JSON:', err.message);
+    throw new Error(`Invalid Firebase service account configuration: ${err.message}`);
   }
 } else if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  if (!process.env.FIREBASE_PROJECT_ID) {
+    throw new Error('FIREBASE_PROJECT_ID must match the Firebase web app project.');
+  }
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\\n')
-    })
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+    }),
+    projectId: process.env.FIREBASE_PROJECT_ID
   });
+}
+
+if (!authBypass && admin.apps.length === 0) {
+  throw new Error('Firebase Admin credentials are required. Configure FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY.');
 }
 
 app.use(cors({ origin: CLIENT_ORIGIN === true ? true : CLIENT_ORIGIN, credentials: true }));
