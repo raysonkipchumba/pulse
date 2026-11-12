@@ -32,8 +32,19 @@ const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || (process.env.NODE_ENV === 'pr
 const authBypass = process.env.NODE_ENV !== 'production' && !process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.FIREBASE_CLIENT_EMAIL && !process.env.FIREBASE_PRIVATE_KEY;
 let firebaseAdminInitialized = false;
 
-function normalizePrivateKey(privateKey) {
-  return privateKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n').trim();
+function normalizePrivateKey(value, settingName = 'FIREBASE_PRIVATE_KEY') {
+  const privateKey = value
+    .trim()
+    .replace(/^(['"])([\s\S]*)\1$/, '$2')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .trim();
+
+  if (!privateKey.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
+    throw new Error(`${settingName} is missing or not a PEM private key.`);
+  }
+
+  return privateKey;
 }
 
 if (process.env.NODE_ENV === 'production' && !CLIENT_ORIGIN) {
@@ -44,9 +55,11 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     if (typeof serviceAccount.private_key === 'string') {
-      serviceAccount.private_key = normalizePrivateKey(serviceAccount.private_key);
+      serviceAccount.private_key = normalizePrivateKey(serviceAccount.private_key, 'FIREBASE_SERVICE_ACCOUNT private_key');
     } else if (typeof serviceAccount.privateKey === 'string') {
-      serviceAccount.privateKey = normalizePrivateKey(serviceAccount.privateKey);
+      serviceAccount.privateKey = normalizePrivateKey(serviceAccount.privateKey, 'FIREBASE_SERVICE_ACCOUNT privateKey');
+    } else {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT must include a private_key.');
     }
     const serviceAccountProjectId = serviceAccount.project_id;
     if (process.env.FIREBASE_PROJECT_ID && serviceAccountProjectId && process.env.FIREBASE_PROJECT_ID !== serviceAccountProjectId) {
