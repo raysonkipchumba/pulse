@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from './components/Navbar';
-import AuthView from './components/AuthView';
 import WalletView from './components/WalletView';
 import ActivityView from './components/ActivityView';
 import PayPalView from './components/PayPalView';
 import CheckoutView from './components/CheckoutView';
 import AssistantView from './components/AssistantView';
 import SendModal from './components/SendModal';
-import { Check, ChevronDown, Copy, LogOut } from 'lucide-react';
+import { Check, ChevronDown, Copy } from 'lucide-react';
 import { api } from './services/api';
 
 export default function App() {
@@ -70,62 +69,25 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    const restoreSession = async () => {
-      if (!api.getToken()) {
-        setPulseUser(null);
-        setTransactions([]);
-        setTransactionsError('');
-        setLoading(false);
-        return;
-      }
-
+    const loadDemoAccount = async () => {
       setLoadError('');
       setLoading(true);
       try {
-        const user = await api.getCurrentUser();
+        const user = await api.getDemoAccount();
         if (active) await loadUserData(user);
       } catch (err) {
-        console.error('Session restore error:', err);
-        if (active) {
-          if (err.status === 401) {
-            api.signOut();
-            setPulseUser(null);
-            setTransactions([]);
-          } else {
-            setLoadError(err.message || 'Unable to load your account. Please try again.');
-          }
-        }
+        console.error('Demo wallet load error:', err);
+        if (active) setLoadError(err.message || 'Unable to load the demo wallet. Please try again.');
       } finally {
         if (active) setLoading(false);
       }
     };
 
-    restoreSession();
+    loadDemoAccount();
     return () => {
       active = false;
     };
   }, [loadUserData]);
-
-  const handleSignOut = async () => {
-    api.signOut();
-    setPulseUser(null);
-    setTransactions([]);
-    setLoadError('');
-    setIsProfileOpen(false);
-  };
-
-  const handleAuthSuccess = async (user) => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      await loadUserData(user);
-    } catch (err) {
-      console.error('User load error:', err);
-      setLoadError(err.message || 'Unable to load your account. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleProfileTagCopy = async () => {
     if (!pulseUser?.tag) return;
@@ -148,7 +110,7 @@ export default function App() {
     setLoading(true);
     setLoadError('');
     try {
-      const user = await api.getCurrentUser();
+      const user = await api.getDemoAccount();
       await loadUserData(user);
     } catch (err) {
       console.error('User load retry error:', err);
@@ -160,7 +122,7 @@ export default function App() {
 
   const handleTransferSuccess = async () => {
     try {
-      await loadUserData(await api.getCurrentUser());
+      await loadUserData(await api.getDemoAccount());
     } catch (err) {
       console.error('Wallet refresh error:', err);
       setLoadError(err.message || 'Unable to refresh your wallet.');
@@ -169,7 +131,7 @@ export default function App() {
 
   const handleDepositSuccess = useCallback(async () => {
     try {
-      await loadUserData(await api.getCurrentUser());
+      await loadUserData(await api.getDemoAccount());
     } catch (err) {
       console.error('Wallet refresh error:', err);
       setLoadError(err.message || 'Unable to refresh your wallet.');
@@ -180,13 +142,9 @@ export default function App() {
     return (
       <div className="loading-screen">
         <div className="loading-mark">P</div>
-        <span>Loading your account...</span>
+        <span>Loading the shared demo wallet...</span>
       </div>
     );
-  }
-
-  if (!pulseUser) {
-    return <AuthView onAuthSuccess={handleAuthSuccess} />;
   }
 
   if (loadError || !pulseUser) {
@@ -216,7 +174,6 @@ export default function App() {
         user={pulseUser}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onSignOut={handleSignOut}
       />
       <div className="app-content">
         <header className="topbar">
@@ -261,14 +218,6 @@ export default function App() {
                   <div className="profile-status">
                     {pulseUser.account_status || 'ACTIVE'} account
                   </div>
-                  <button
-                    type="button"
-                    className="profile-signout"
-                    onClick={handleSignOut}
-                  >
-                    <LogOut size={16} />
-                    Sign out
-                  </button>
                 </div>
               )}
             </div>

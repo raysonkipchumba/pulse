@@ -84,9 +84,9 @@ ECO_NGO_PAYPAL_ID=ngo@example.org
 
 For Render, add `CLIENT_ORIGIN` to the backend service's Environment settings and set it to the frontend's public origin (scheme and hostname only, with no path or trailing slash), then redeploy. If the frontend is served by the same service, use that service's public URL. The server intentionally refuses to start in production without this setting rather than enabling permissive cross-origin access.
 
-For account sign-in, the backend stores password hashes in the Render Postgres database. Set `DATABASE_URL` to the Render database's internal connection string, `JWT_SECRET` to a long, random secret, and `NODE_ENV=production` in the backend service's Environment settings. Do not use the development fallback secret in production.
+The app runs without login or signup and uses one shared demo wallet for every visitor. Set `DATABASE_URL` to the Render Postgres database's internal connection string, `CLIENT_ORIGIN` to the frontend's public origin, and `NODE_ENV=production` in the backend service's Environment settings. The demo wallet and demo recipient are created automatically when the server initializes the database. All visitors share the same wallet and transaction history.
 
-The Postgres database starts with an empty wallet; existing local SQLite data and accounts are not imported. Create a new account through the app's registration screen.
+The shared demo wallet is not for private or real-money use. PayPal operations are restricted to the sandbox API; do not configure live PayPal credentials or use this mode for production payments. Existing database accounts are not available through the demo wallet.
 
 `GEMINI_API_KEY` enables the Sentinel transaction review and item-specific Eco-Route estimate. The server-side historical-data JSON is sent as context to the review model; it should be maintained from trusted merchant records, not browser input. Eco donations require PayPal multiparty checkout approval and a configured NGO receiver. Without an NGO receiver, opting into a donation will be rejected rather than silently routing it to the merchant.
 

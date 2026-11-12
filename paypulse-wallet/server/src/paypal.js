@@ -8,7 +8,15 @@ const PAYPAL_API_BASE = process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.pa
 let cachedToken = null;
 let tokenExpiresAt = 0;
 
+export function isPayPalSandboxConfigured() {
+  return new URL(PAYPAL_API_BASE).origin === 'https://api-m.sandbox.paypal.com';
+}
+
 export async function getPayPalAccessToken() {
+  if (!isPayPalSandboxConfigured()) {
+    throw new Error('PayPal live operations are disabled for the shared demo wallet.');
+  }
+
   const now = Date.now();
   if (cachedToken && now < tokenExpiresAt - 60000) return cachedToken;
 

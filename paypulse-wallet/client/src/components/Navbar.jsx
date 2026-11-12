@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownLeft, ArrowLeftRight, LayoutDashboard, LogOut, ShoppingBag, Sparkles } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeftRight, LayoutDashboard, ShoppingBag, Sparkles } from 'lucide-react';
 
 const navigation = [
   { id: 'wallet', label: 'Overview', icon: LayoutDashboard },
@@ -9,7 +9,7 @@ const navigation = [
   { id: 'ai', label: 'Pulse assistant', icon: Sparkles }
 ];
 
-export default function Navbar({ user, activeTab, setActiveTab, onSignOut }) {
+export default function Navbar({ user, activeTab, setActiveTab }) {
   const initials = (user?.name || user?.email || 'U')
     .split(/\s+/)
     .map((part) => part[0])
@@ -58,15 +58,6 @@ export default function Navbar({ user, activeTab, setActiveTab, onSignOut }) {
           <strong>{user?.name || 'Your account'}</strong>
           <span>{user?.email || user?.tag || 'Pulse member'}</span>
         </div>
-        <button
-          type="button"
-          className="signout-button"
-          onClick={onSignOut}
-          aria-label="Sign out"
-          title="Sign out"
-        >
-          <LogOut size={17} />
-        </button>
       </div>
     </aside>
   );

@@ -82,13 +82,13 @@ export default function SendModal({ isOpen, onClose, user, onSendSuccess }) {
         <form onSubmit={handleSubmit} className="send-form">
           <div>
             <label htmlFor="send-recipient">
-              Recipient Email or Tag
+              Demo Recipient Email or Tag
             </label>
             <input
               id="send-recipient"
               type="text"
               required
-              placeholder="e.g. user@domain.com or @tag"
+              placeholder="@pulse_demo_recipient"
               value={recipient}
               onChange={(e) => setRecipient(e.target.value)}
             />

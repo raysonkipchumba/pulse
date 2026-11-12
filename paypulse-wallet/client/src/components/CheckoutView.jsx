@@ -93,7 +93,7 @@ export default function CheckoutView({ user }) {
 
     async function mountPayPal() {
       try {
-        const clientId = import.meta.env.VITE_PAYPAL_CLIENT_ID || (await api.getPayPalConfig()).paypalClientId;
+        const clientId = (await api.getPayPalConfig()).paypalClientId;
         if (!clientId) throw new Error('PayPal Client ID is not configured.');
         await loadPayPalScript(clientId);
         if (!active || !window.paypal || !paypalContainer) return;

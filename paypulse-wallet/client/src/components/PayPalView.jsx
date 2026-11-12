@@ -15,12 +15,7 @@ export default function PayPalView({ user, onDepositSuccess }) {
 
     async function initSdk() {
       try {
-        let clientId = import.meta.env.VITE_PAYPAL_CLIENT_ID;
-        if (!clientId) {
-          const cfgRes = await fetch('/api/config');
-          const cfg = await cfgRes.json();
-          clientId = cfg.paypalClientId;
-        }
+        const clientId = (await api.getPayPalConfig()).paypalClientId;
 
         if (!clientId) {
           if (isMounted) setStatusMessage('PayPal Client ID not configured.');

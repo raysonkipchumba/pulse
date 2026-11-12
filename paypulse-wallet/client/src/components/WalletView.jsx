@@ -123,7 +123,7 @@ export default function WalletView({ user, transactions = [], onOpenSend, onOpen
       <section className="welcome-row">
         <div>
           <h2>Welcome back, {displayName}</h2>
-          <p>Here’s what’s happening with your money today.</p>
+          <p>This demo wallet and its activity are shared with all visitors.</p>
         </div>
         <button type="button" className="date-pill">
           {today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}

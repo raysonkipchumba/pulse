@@ -60,7 +60,6 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
-      password_hash TEXT NOT NULL,
       balance NUMERIC NOT NULL DEFAULT 100,
       held_balance NUMERIC NOT NULL DEFAULT 0,
       tag TEXT UNIQUE,
@@ -178,5 +177,20 @@ export async function initDb() {
     );
   `);
 
+  await pool.query('ALTER TABLE users DROP COLUMN IF EXISTS password_hash');
+
+  const demoUser = await pool.query(`
+    INSERT INTO users (email, name, tag)
+    VALUES ('pulse-demo@pulse.local', 'Pulse Demo Wallet', '@pulse_demo')
+    ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, tag = EXCLUDED.tag
+    RETURNING id
+  `);
+  await pool.query(`
+    INSERT INTO users (email, name, tag)
+    VALUES ('pulse-demo-recipient@pulse.local', 'Pulse Demo Recipient', '@pulse_demo_recipient')
+    ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, tag = EXCLUDED.tag
+  `);
+
   console.log('Pulse production database initialized.');
+  return String(demoUser.rows[0].id);
 }

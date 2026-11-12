@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import { db, initDb } from './db.js';
-import { login, requireAuth, signup } from './auth.js';
 import { handleRiskPipeline } from './riskEngine.js';
 import {
   createPayPalOrder,
@@ -16,7 +15,8 @@ import {
   refundPayPalCapture,
   createPayPalAuthorizeOrder,
   capturePayPalAuthorization,
-  voidPayPalAuthorization
+  voidPayPalAuthorization,
+  isPayPalSandboxConfigured
 } from './paypal.js';
 
 const app = express();
@@ -25,6 +25,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
 const OVERRIDE_PHRASE = 'I UNDERSTAND THE RISK';
 const DEFAULT_COUNTRY = 'US';
+let demoUserId;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || (process.env.NODE_ENV === 'production' ? undefined : true);
 if (process.env.NODE_ENV === 'production' && !CLIENT_ORIGIN) {
   throw new Error('CLIENT_ORIGIN must be set when running in production.');
@@ -147,13 +148,11 @@ function assertAccountAllowed(user, allowPartialHold = false, context = 'This ac
 
 function toUserView(user) {
   if (!user) return user;
-  const safeUser = { ...user };
-  delete safeUser.password_hash;
   const balance = Number(user.balance || 0);
   const held = Number(user.held_balance || 0);
   const available = Math.max(0, balance - held);
   return {
-    ...safeUser,
+    ...user,
     balance: money(balance),
     held_balance: money(held),
     available: money(available)
@@ -254,14 +253,16 @@ app.use('/api/checkout/capture-order', apiLimiter);
 app.use('/api/ai', aiLimiter);
 
 app.get('/api/config', (req, res) => {
-  res.json({ paypalClientId: process.env.PAYPAL_CLIENT_ID || '' });
+  res.json({ paypalClientId: isPayPalSandboxConfigured() ? process.env.PAYPAL_CLIENT_ID || '' : '' });
 });
 
-app.post('/api/signup', apiLimiter, signup);
-app.post('/api/login', apiLimiter, login);
-app.use('/api', requireAuth);
+app.use('/api', (req, res, next) => {
+  if (!demoUserId) return res.status(503).json({ error: 'The demo wallet is still starting.' });
+  req.uid = demoUserId;
+  next();
+});
 
-app.get('/api/auth/me', async (req, res) => {
+app.get('/api/demo/account', async (req, res) => {
   try {
     const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
     if (!user) return res.status(404).json({ error: 'User not found.' });
@@ -306,38 +307,11 @@ app.get('/api/account/status', async (req, res) => {
 });
 
 app.post('/api/account/verify', async (req, res) => {
-  try {
-    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    await db.prepare("UPDATE users SET id_verified = 1, account_status = CASE WHEN account_status = 'LIMITED' THEN 'LIMITED' ELSE 'ACTIVE' END WHERE id = ?").run(req.uid);
-    res.json({ success: true, account_status: 'ACTIVE', id_verified: 1 });
-  } catch (err) {
-    res.status(500).json({ error: 'Unable to verify account.' });
-  }
+  res.status(403).json({ error: 'Identity verification is unavailable in shared demo mode.' });
 });
 
 app.post('/api/admin/release-hold', async (req, res) => {
-  try {
-    const amount = Number(req.body.amount || 0);
-    const adminUids = (process.env.ADMIN_UIDS || '').split(',').map((s) => s.trim()).filter(Boolean);
-    const allowed = adminUids.length ? adminUids.includes(req.uid) : process.env.NODE_ENV !== 'production';
-
-    if (!allowed) return res.status(403).json({ error: 'Only an admin can release a hold.' });
-    if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Release amount must be greater than zero.' });
-
-    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.body.userId || req.uid);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const releaseAmount = Math.min(Math.max(0, Number(user.held_balance || 0)), money(amount));
-    await db.prepare('UPDATE users SET held_balance = held_balance - ? WHERE id = ?').run(releaseAmount, user.id);
-    const auditId = randomUUID();
-    await db.prepare('INSERT INTO account_audit_events (id, user_id, event_type, amount, note) VALUES (?, ?, ?, ?, ?)')
-      .run(auditId, user.id, 'HOLD_RELEASE', releaseAmount, `Admin release by ${req.uid}`);
-
-    res.json({ success: true, released: releaseAmount, held_balance: money(Number(user.held_balance || 0) - releaseAmount) });
-  } catch (err) {
-    res.status(500).json({ error: 'Unable to release hold.' });
-  }
+  res.status(403).json({ error: 'Admin actions are unavailable in shared demo mode.' });
 });
 
 app.get('/api/transactions/:userId', async (req, res) => {
@@ -371,7 +345,8 @@ app.post('/api/transfer', async (req, res) => {
 
     const recipient = await db.prepare(`
       SELECT * FROM users
-      WHERE email = ? OR tag = ? OR id::text = ?
+      WHERE email = 'pulse-demo-recipient@pulse.local'
+        AND (email = ? OR tag = ? OR id::text = ?)
     `).get(normalizeEmail(recipientInput), normalizeTag(recipientInput), recipientInput);
 
     if (!recipient || recipient.id === sender.id) {
@@ -840,7 +815,7 @@ if (fs.existsSync(clientDist)) {
   });
 }
 
-await initDb();
+demoUserId = await initDb();
 processExpiredPools().catch((err) => console.error('Pool expiry sweep failed:', err));
 setInterval(() => processExpiredPools().catch((err) => console.error('Pool expiry sweep failed:', err)), 60 * 1000).unref();
 

@@ -1,20 +1,10 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
-const TOKEN_KEY = 'pulse_auth_token';
-
-function getAuthHeaders(extraHeaders = {}) {
-  const headers = { ...extraHeaders };
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
 
 async function jsonRequest(path, options = {}) {
-  const headers = getAuthHeaders({
+  const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
-  });
+  };
 
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -31,34 +21,8 @@ async function jsonRequest(path, options = {}) {
 }
 
 export const api = {
-  getToken() {
-    return localStorage.getItem(TOKEN_KEY);
-  },
-
-  async signup(credentials) {
-    const result = await jsonRequest('/signup', {
-      method: 'POST',
-      body: JSON.stringify(credentials)
-    });
-    localStorage.setItem(TOKEN_KEY, result.token);
-    return result;
-  },
-
-  async login(credentials) {
-    const result = await jsonRequest('/login', {
-      method: 'POST',
-      body: JSON.stringify(credentials)
-    });
-    localStorage.setItem(TOKEN_KEY, result.token);
-    return result;
-  },
-
-  async getCurrentUser() {
-    return jsonRequest('/auth/me');
-  },
-
-  signOut() {
-    localStorage.removeItem(TOKEN_KEY);
+  async getDemoAccount() {
+    return jsonRequest('/demo/account');
   },
 
   async getUser(id) {
@@ -150,7 +114,7 @@ export const api = {
   },
 
   async askAI(userId, prompt) {
-    if (!userId) throw new Error('A signed-in account is required to use Pulse AI');
+    if (!userId) throw new Error('The demo wallet could not be loaded.');
     return jsonRequest('/ai/assistant', {
       method: 'POST',
       body: JSON.stringify({ userId, prompt })
