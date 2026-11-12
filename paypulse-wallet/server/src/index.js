@@ -5,7 +5,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import admin from 'firebase-admin';
+import { cert, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import rateLimit from 'express-rate-limit';
 import { db, initDatabase } from './db.js';
 import { handleRiskPipeline } from './riskEngine.js';
@@ -42,8 +43,8 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     if (process.env.FIREBASE_PROJECT_ID && serviceAccountProjectId && process.env.FIREBASE_PROJECT_ID !== serviceAccountProjectId) {
       throw new Error('FIREBASE_PROJECT_ID does not match the service account project_id.');
     }
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+    initializeApp({
+      credential: cert(serviceAccount),
       projectId: process.env.FIREBASE_PROJECT_ID || serviceAccountProjectId
     });
     firebaseAdminInitialized = true;
@@ -54,8 +55,8 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   if (!process.env.FIREBASE_PROJECT_ID) {
     throw new Error('FIREBASE_PROJECT_ID must match the Firebase web app project.');
   }
-  admin.initializeApp({
-    credential: admin.credential.cert({
+  initializeApp({
+    credential: cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
@@ -260,7 +261,7 @@ async function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Authentication required.' });
 
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
+    const decoded = await getAuth().verifyIdToken(token);
     req.uid = decoded.uid;
     req.userEmail = decoded.email || null;
     next();
