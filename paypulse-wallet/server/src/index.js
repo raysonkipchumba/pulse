@@ -32,6 +32,10 @@ const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || (process.env.NODE_ENV === 'pr
 const authBypass = process.env.NODE_ENV !== 'production' && !process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.FIREBASE_CLIENT_EMAIL && !process.env.FIREBASE_PRIVATE_KEY;
 let firebaseAdminInitialized = false;
 
+function normalizePrivateKey(privateKey) {
+  return privateKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n').trim();
+}
+
 if (process.env.NODE_ENV === 'production' && !CLIENT_ORIGIN) {
   throw new Error('CLIENT_ORIGIN must be set when running in production.');
 }
@@ -39,6 +43,11 @@ if (process.env.NODE_ENV === 'production' && !CLIENT_ORIGIN) {
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    if (typeof serviceAccount.private_key === 'string') {
+      serviceAccount.private_key = normalizePrivateKey(serviceAccount.private_key);
+    } else if (typeof serviceAccount.privateKey === 'string') {
+      serviceAccount.privateKey = normalizePrivateKey(serviceAccount.privateKey);
+    }
     const serviceAccountProjectId = serviceAccount.project_id;
     if (process.env.FIREBASE_PROJECT_ID && serviceAccountProjectId && process.env.FIREBASE_PROJECT_ID !== serviceAccountProjectId) {
       throw new Error('FIREBASE_PROJECT_ID does not match the service account project_id.');
@@ -59,7 +68,7 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     credential: cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+      privateKey: normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY)
     }),
     projectId: process.env.FIREBASE_PROJECT_ID
   });
