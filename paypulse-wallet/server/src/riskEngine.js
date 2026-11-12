@@ -138,12 +138,12 @@ Task: Generate a concise, factual 2-sentence background audit log note and check
  * Main risk event handler executed in the background for every payment event.
  */
 export async function handleRiskPipeline(accountId, ev) {
-  const acct = db.prepare('SELECT * FROM users WHERE id = ?').get(accountId);
+  const acct = await db.prepare('SELECT * FROM users WHERE id = ?').get(accountId);
   if (!acct) {
     return { action: 'ALLOW', score: 0.0, reasons: [] };
   }
 
-  const dailyRows = db.prepare(`
+  const dailyRows = await db.prepare(`
     SELECT volume FROM daily_volumes
     WHERE user_id = ? AND date < ?
     ORDER BY date DESC LIMIT 30
@@ -151,10 +151,10 @@ export async function handleRiskPipeline(accountId, ev) {
   const dailyVolumes30d = dailyRows.map((r) => Number(r.volume || 0));
 
   const today = new Date().toISOString().slice(0, 10);
-  const todayRow = db.prepare('SELECT volume FROM daily_volumes WHERE user_id = ? AND date = ?').get(accountId, today);
+  const todayRow = await db.prepare('SELECT volume FROM daily_volumes WHERE user_id = ? AND date = ?').get(accountId, today);
   const todayVolume = Number(todayRow ? todayRow.volume : 0);
 
-  const totalVolumeRow = db.prepare('SELECT SUM(amount) as total FROM transactions WHERE user_id = ?').get(accountId);
+  const totalVolumeRow = await db.prepare('SELECT SUM(amount) as total FROM transactions WHERE user_id = ?').get(accountId);
   const lifetimeVolume = Number(totalVolumeRow?.total || 0);
 
   const { score, reasons } = calculateRiskScore(acct, ev, dailyVolumes30d, todayVolume, lifetimeVolume);
@@ -162,7 +162,7 @@ export async function handleRiskPipeline(accountId, ev) {
   const explanation = await generateGroundedExplanation(reasons, score, action, ev.amount);
 
   const decisionId = 'dec_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO risk_decisions (id, account_id, event_id, event_type, score, reasons_json, action, ai_audit_explanation)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -177,17 +177,17 @@ export async function handleRiskPipeline(accountId, ev) {
   );
 
   if (todayRow) {
-    db.prepare('UPDATE daily_volumes SET volume = volume + ? WHERE user_id = ? AND date = ?').run(Number(ev.amount || 0), accountId, today);
+    await db.prepare('UPDATE daily_volumes SET volume = volume + ? WHERE user_id = ? AND date = ?').run(Number(ev.amount || 0), accountId, today);
   } else {
-    db.prepare('INSERT INTO daily_volumes (user_id, date, volume) VALUES (?, ?, ?)').run(accountId, today, Number(ev.amount || 0));
+    await db.prepare('INSERT INTO daily_volumes (user_id, date, volume) VALUES (?, ?, ?)').run(accountId, today, Number(ev.amount || 0));
   }
 
   if (action === 'PARTIAL_HOLD') {
-    db.prepare('UPDATE users SET held_balance = held_balance + ?, account_status = ? WHERE id = ?').run(Number(ev.amount || 0), 'PARTIAL_HOLD', accountId);
+    await db.prepare('UPDATE users SET held_balance = held_balance + ?, account_status = ? WHERE id = ?').run(Number(ev.amount || 0), 'PARTIAL_HOLD', accountId);
   } else if (action === 'LIMIT_ACCOUNT') {
-    db.prepare('UPDATE users SET account_status = ? WHERE id = ?').run('LIMITED', accountId);
+    await db.prepare('UPDATE users SET account_status = ? WHERE id = ?').run('LIMITED', accountId);
   } else if (action === 'STEP_UP') {
-    db.prepare('UPDATE users SET account_status = ? WHERE id = ?').run('STEP_UP', accountId);
+    await db.prepare('UPDATE users SET account_status = ? WHERE id = ?').run('STEP_UP', accountId);
   }
 
   return { action, score, reasons, explanation };

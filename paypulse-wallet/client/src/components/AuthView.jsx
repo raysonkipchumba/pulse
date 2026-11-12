@@ -1,12 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { 
-  auth, 
-  googleProvider, 
-  signInWithPopup, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword 
-} from '../firebase';
+import { api } from '../services/api';
 
 export default function AuthView({ onAuthSuccess }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -15,31 +9,15 @@ export default function AuthView({ onAuthSuccess }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleGoogleSignIn = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      const res = await signInWithPopup(auth, googleProvider);
-      onAuthSuccess(res.user);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleEmailAuth = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      let res;
-      if (isRegister) {
-        res = await createUserWithEmailAndPassword(auth, email, password);
-      } else {
-        res = await signInWithEmailAndPassword(auth, email, password);
-      }
-      onAuthSuccess(res.user);
+      const result = isRegister
+        ? await api.signup({ email, password })
+        : await api.login({ email, password });
+      await onAuthSuccess(result.user);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -63,20 +41,6 @@ export default function AuthView({ onAuthSuccess }) {
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleGoogleSignIn}
-          disabled={loading}
-          className="google-button"
-        >
-          <span className="google-mark">G</span>
-          <span>Continue with Google</span>
-        </button>
-
-        <div className="auth-divider">
-          <span>or continue with email</span>
-        </div>
-
         <form onSubmit={handleEmailAuth} className="auth-form">
           <div>
             <label htmlFor="auth-email">Email address</label>
@@ -97,6 +61,7 @@ export default function AuthView({ onAuthSuccess }) {
               id="auth-password"
               type="password"
               required
+              minLength={isRegister ? 8 : undefined}
               autoComplete={isRegister ? 'new-password' : 'current-password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}

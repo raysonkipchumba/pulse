@@ -1,21 +1,17 @@
-import { auth } from '../firebase';
-
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const TOKEN_KEY = 'pulse_auth_token';
 
-async function getAuthHeaders(extraHeaders = {}) {
+function getAuthHeaders(extraHeaders = {}) {
   const headers = { ...extraHeaders };
-  const currentUser = auth.currentUser;
-  if (currentUser) {
-    const token = await currentUser.getIdToken();
-    if (!token) throw new Error('Unable to verify your Firebase session. Please sign in again.');
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
     headers.Authorization = `Bearer ${token}`;
-    headers['X-User-ID'] = currentUser.uid;
   }
   return headers;
 }
 
 async function jsonRequest(path, options = {}) {
-  const headers = await getAuthHeaders({
+  const headers = getAuthHeaders({
     'Content-Type': 'application/json',
     ...(options.headers || {})
   });
@@ -26,16 +22,43 @@ async function jsonRequest(path, options = {}) {
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+  if (!res.ok) {
+    const error = new Error(data.error || 'Request failed');
+    error.status = res.status;
+    throw error;
+  }
   return data;
 }
 
 export const api = {
-  async syncUser(userData) {
-    return jsonRequest('/auth/sync', {
+  getToken() {
+    return localStorage.getItem(TOKEN_KEY);
+  },
+
+  async signup(credentials) {
+    const result = await jsonRequest('/signup', {
       method: 'POST',
-      body: JSON.stringify(userData)
+      body: JSON.stringify(credentials)
     });
+    localStorage.setItem(TOKEN_KEY, result.token);
+    return result;
+  },
+
+  async login(credentials) {
+    const result = await jsonRequest('/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials)
+    });
+    localStorage.setItem(TOKEN_KEY, result.token);
+    return result;
+  },
+
+  async getCurrentUser() {
+    return jsonRequest('/auth/me');
+  },
+
+  signOut() {
+    localStorage.removeItem(TOKEN_KEY);
   },
 
   async getUser(id) {

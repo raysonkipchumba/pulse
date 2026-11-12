@@ -1813,53 +1813,9 @@ input:focus-visible {
   line-height: 1.5;
 }
 
-.google-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  width: 100%;
-  min-height: 42px;
-  color: #4b475d;
-  border: 1px solid #e8e6ef;
-  border-radius: 10px;
-  background: white;
-  font-size: 11px;
-  font-weight: 500;
-  transition: background 150ms ease, border-color 150ms ease;
-}
-
-.google-button:hover {
-  border-color: #d7cdf8;
-  background: #fcfbff;
-}
-
-.google-button:disabled,
 .auth-submit:disabled {
   cursor: wait;
   opacity: 0.65;
-}
-
-.google-mark {
-  color: #4285f4;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.auth-divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 18px 0;
-  color: #b1adbd;
-  font-size: 9px;
-}
-
-.auth-divider::before,
-.auth-divider::after {
-  flex: 1;
-  border-top: 1px solid #efedf4;
-  content: "";
 }
 
 .auth-form,

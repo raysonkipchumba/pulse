@@ -5,10 +5,9 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { cert, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
 import rateLimit from 'express-rate-limit';
-import { db, initDatabase } from './db.js';
+import { db, initDb } from './db.js';
+import { login, requireAuth, signup } from './auth.js';
 import { handleRiskPipeline } from './riskEngine.js';
 import {
   createPayPalOrder,
@@ -20,8 +19,6 @@ import {
   voidPayPalAuthorization
 } from './paypal.js';
 
-initDatabase();
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -29,68 +26,8 @@ const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models
 const OVERRIDE_PHRASE = 'I UNDERSTAND THE RISK';
 const DEFAULT_COUNTRY = 'US';
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || (process.env.NODE_ENV === 'production' ? undefined : true);
-const authBypass = process.env.NODE_ENV !== 'production' && !process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.FIREBASE_CLIENT_EMAIL && !process.env.FIREBASE_PRIVATE_KEY;
-let firebaseAdminInitialized = false;
-
-// Render env vars need real newlines or \n escapes; paste the key without surrounding quotes.
-function normalizePrivateKey(value, settingName = 'FIREBASE_PRIVATE_KEY') {
-  const privateKey = value
-    .trim()
-    .replace(/^"([\s\S]*)"$/, '$1')
-    .replace(/\\n/g, '\n')
-    .replace(/\r\n/g, '\n')
-    .trim();
-
-  if (!privateKey.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
-    throw new Error(`${settingName} is missing or not a PEM private key.`);
-  }
-
-  return privateKey;
-}
-
 if (process.env.NODE_ENV === 'production' && !CLIENT_ORIGIN) {
   throw new Error('CLIENT_ORIGIN must be set when running in production.');
-}
-
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    if (typeof serviceAccount.private_key === 'string') {
-      serviceAccount.private_key = normalizePrivateKey(serviceAccount.private_key, 'FIREBASE_SERVICE_ACCOUNT private_key');
-    } else if (typeof serviceAccount.privateKey === 'string') {
-      serviceAccount.privateKey = normalizePrivateKey(serviceAccount.privateKey, 'FIREBASE_SERVICE_ACCOUNT privateKey');
-    } else {
-      throw new Error('FIREBASE_SERVICE_ACCOUNT must include a private_key.');
-    }
-    const serviceAccountProjectId = serviceAccount.project_id;
-    if (process.env.FIREBASE_PROJECT_ID && serviceAccountProjectId && process.env.FIREBASE_PROJECT_ID !== serviceAccountProjectId) {
-      throw new Error('FIREBASE_PROJECT_ID does not match the service account project_id.');
-    }
-    initializeApp({
-      credential: cert(serviceAccount),
-      projectId: process.env.FIREBASE_PROJECT_ID || serviceAccountProjectId
-    });
-    firebaseAdminInitialized = true;
-  } catch (err) {
-    throw new Error(`Invalid Firebase service account configuration: ${err.message}`);
-  }
-} else if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
-  if (!process.env.FIREBASE_PROJECT_ID) {
-    throw new Error('FIREBASE_PROJECT_ID must match the Firebase web app project.');
-  }
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY)
-    }),
-    projectId: process.env.FIREBASE_PROJECT_ID
-  });
-  firebaseAdminInitialized = true;
-}
-
-if (!authBypass && !firebaseAdminInitialized) {
-  throw new Error('Firebase Admin credentials are required. Configure FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY.');
 }
 
 app.use(cors({ origin: CLIENT_ORIGIN === true ? true : CLIENT_ORIGIN, credentials: true }));
@@ -210,14 +147,16 @@ function assertAccountAllowed(user, allowPartialHold = false, context = 'This ac
 
 function toUserView(user) {
   if (!user) return user;
+  const safeUser = { ...user };
+  delete safeUser.password_hash;
   const balance = Number(user.balance || 0);
   const held = Number(user.held_balance || 0);
   const available = Math.max(0, balance - held);
   return {
-    ...user,
-    balance: fromCents(balance),
-    held_balance: fromCents(held),
-    available: fromCents(available)
+    ...safeUser,
+    balance: money(balance),
+    held_balance: money(held),
+    available: money(available)
   };
 }
 
@@ -259,8 +198,8 @@ function buildPurchaseUnits(cart, donationAmount = 0) {
   return units;
 }
 
-function validateAssessment(assessmentId, cart, overridePhrase) {
-  const assessment = db.prepare('SELECT * FROM checkout_assessments WHERE id = ?').get(assessmentId);
+async function validateAssessment(assessmentId, cart, overridePhrase) {
+  const assessment = await db.prepare('SELECT * FROM checkout_assessments WHERE id = ?').get(assessmentId);
   if (!assessment || assessment.used || new Date(assessment.expires_at) <= new Date() || assessment.cart_hash !== cartHash(cart)) {
     throw new Error('Checkout review expired or no longer matches the cart. Review it again.');
   }
@@ -270,69 +209,44 @@ function validateAssessment(assessmentId, cart, overridePhrase) {
   return assessment;
 }
 
-async function requireAuth(req, res, next) {
-  if (req.path === '/api/config') return next();
-
-  if (authBypass) {
-    req.uid = String(req.headers['x-user-id'] || req.body?.uid || 'dev-user');
-    return next();
-  }
-
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-
-  if (!token) return res.status(401).json({ error: 'Authentication required.' });
-
-  try {
-    const decoded = await getAuth().verifyIdToken(token);
-    req.uid = decoded.uid;
-    req.userEmail = decoded.email || null;
-    next();
-  } catch (err) {
-    console.error('Token verification failed:', err.message);
-    return res.status(401).json({ error: 'Invalid or expired session.' });
-  }
-}
-
 async function processExpiredPools() {
   if (globalThis.__pulseSweeping) return;
   globalThis.__pulseSweeping = true;
   try {
-    const pools = db.prepare(`
+    const pools = await db.prepare(`
       SELECT * FROM micro_pools
       WHERE expires_at <= ? AND status IN ('OPEN', 'REFUNDING', 'REFUND_FAILED')
     `).all(new Date().toISOString());
 
     for (const pool of pools) {
-      db.prepare("UPDATE micro_pools SET status = 'REFUNDING' WHERE id = ?").run(pool.id);
+      await db.prepare("UPDATE micro_pools SET status = 'REFUNDING' WHERE id = ?").run(pool.id);
       let failed = false;
-      const contributions = db.prepare(`
+      const contributions = await db.prepare(`
         SELECT * FROM micro_pool_contributions
         WHERE pool_id = ? AND status IN ('CAPTURED', 'REFUND_FAILED')
       `).all(pool.id);
 
       for (const contribution of contributions) {
         const requestId = contribution.refund_request_id || randomUUID();
-        db.prepare('UPDATE micro_pool_contributions SET refund_request_id = ? WHERE id = ?').run(requestId, contribution.id);
+        await db.prepare('UPDATE micro_pool_contributions SET refund_request_id = ? WHERE id = ?').run(requestId, contribution.id);
         try {
           await refundPayPalCapture(contribution.paypal_capture_id, requestId);
-          db.prepare("UPDATE micro_pool_contributions SET status = 'REFUNDED' WHERE id = ?").run(contribution.id);
+          await db.prepare("UPDATE micro_pool_contributions SET status = 'REFUNDED' WHERE id = ?").run(contribution.id);
         } catch (err) {
           console.error(`Pool refund failed for ${contribution.id}:`, err.message);
-          db.prepare("UPDATE micro_pool_contributions SET status = 'REFUND_FAILED' WHERE id = ?").run(contribution.id);
+          await db.prepare("UPDATE micro_pool_contributions SET status = 'REFUND_FAILED' WHERE id = ?").run(contribution.id);
           failed = true;
         }
       }
 
-      db.prepare("UPDATE micro_pool_contributions SET status = 'CANCELLED' WHERE pool_id = ? AND status = 'PENDING'").run(pool.id);
-      db.prepare('UPDATE micro_pools SET reserved_amount = 0, status = ? WHERE id = ?').run(failed ? 'REFUND_FAILED' : 'REFUNDED', pool.id);
+      await db.prepare("UPDATE micro_pool_contributions SET status = 'CANCELLED' WHERE pool_id = ? AND status = 'PENDING'").run(pool.id);
+      await db.prepare('UPDATE micro_pools SET reserved_amount = 0, status = ? WHERE id = ?').run(failed ? 'REFUND_FAILED' : 'REFUNDED', pool.id);
     }
   } finally {
     globalThis.__pulseSweeping = false;
   }
 }
 
-app.use('/api', requireAuth);
 app.use('/api/paypal', apiLimiter);
 app.use('/api/checkout/risk-check', apiLimiter);
 app.use('/api/checkout/create-order', apiLimiter);
@@ -343,49 +257,24 @@ app.get('/api/config', (req, res) => {
   res.json({ paypalClientId: process.env.PAYPAL_CLIENT_ID || '' });
 });
 
-app.post('/api/auth/sync', (req, res) => {
+app.post('/api/signup', apiLimiter, signup);
+app.post('/api/login', apiLimiter, login);
+app.use('/api', requireAuth);
+
+app.get('/api/auth/me', async (req, res) => {
   try {
-    const uid = req.uid;
-    if (!uid) return res.status(401).json({ error: 'Authentication required.' });
-    const email = normalizeEmail(req.body.email || req.userEmail || `${uid}@pulse.local`);
-    if (!email) return res.status(400).json({ error: 'Email is required.' });
-
-    let user = db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
-    if (!user) {
-      const username = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') || 'user';
-      let tag = normalizeTag(username);
-      if (db.prepare('SELECT 1 FROM users WHERE tag = ?').get(tag)) {
-        const uidSuffix = String(uid).replace(/[^a-zA-Z0-9_]/g, '') || 'acct';
-        tag = normalizeTag(`${username}_${uidSuffix}`);
-        let attempt = 1;
-        while (db.prepare('SELECT 1 FROM users WHERE tag = ?').get(tag)) {
-          tag = normalizeTag(`${username}_${uidSuffix}_${attempt}`);
-          attempt += 1;
-        }
-      }
-      db.prepare(`
-        INSERT INTO users (id, email, name, tag, avatar, balance, held_balance, dispute_rate_90d, id_verified, account_status)
-        VALUES (?, ?, ?, ?, ?, 0, 0, 0.0, 0, 'ACTIVE')
-      `).run(uid, email, String(req.body.name || req.body.displayName || email.split('@')[0] || 'Pulse user').slice(0, 80), tag, req.body.avatar || null);
-      user = db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
-    } else {
-      const name = String(req.body.name || req.body.displayName || user.name || email.split('@')[0] || 'Pulse user').slice(0, 80);
-      if (req.body.avatar || name !== user.name) {
-        db.prepare('UPDATE users SET name = COALESCE(?, name), avatar = COALESCE(?, avatar) WHERE id = ?').run(name, req.body.avatar || user.avatar, uid);
-      }
-      user = db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
-    }
-
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
+    if (!user) return res.status(404).json({ error: 'User not found.' });
     res.json(toUserView(user));
   } catch (err) {
-    console.error('Auth sync error:', err);
-    res.status(500).json({ error: 'Unable to sync your account.' });
+    console.error('Account load error:', err);
+    res.status(500).json({ error: 'Unable to load your account.' });
   }
 });
 
-app.get('/api/user/:id', (req, res) => {
+app.get('/api/user/:id', async (req, res) => {
   try {
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (req.uid !== req.params.id) return res.status(403).json({ error: 'Forbidden' });
     res.json(toUserView(user));
@@ -394,20 +283,20 @@ app.get('/api/user/:id', (req, res) => {
   }
 });
 
-app.get('/api/account/status', (req, res) => {
+app.get('/api/account/status', async (req, res) => {
   try {
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    const latest = db.prepare(`
+    const latest = await db.prepare(`
       SELECT * FROM risk_decisions WHERE account_id = ? ORDER BY created_at DESC LIMIT 1
     `).get(req.uid);
     const reasons = latest ? JSON.parse(latest.reasons_json || '[]') : [];
     res.json({
       account_status: user.account_status,
       id_verified: Number(user.id_verified || 0),
-      balance: fromCents(Number(user.balance || 0)),
-      held_balance: fromCents(Number(user.held_balance || 0)),
-      available: fromCents(Math.max(0, Number(user.balance || 0) - Number(user.held_balance || 0))),
+      balance: money(Number(user.balance || 0)),
+      held_balance: money(Number(user.held_balance || 0)),
+      available: money(Math.max(0, Number(user.balance || 0) - Number(user.held_balance || 0))),
       reason_codes: reasons,
       explanation: latest?.ai_audit_explanation || null
     });
@@ -416,18 +305,18 @@ app.get('/api/account/status', (req, res) => {
   }
 });
 
-app.post('/api/account/verify', (req, res) => {
+app.post('/api/account/verify', async (req, res) => {
   try {
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    db.prepare('UPDATE users SET id_verified = 1, account_status = CASE WHEN account_status = "LIMITED" THEN "LIMITED" ELSE "ACTIVE" END WHERE id = ?').run(req.uid);
+    await db.prepare("UPDATE users SET id_verified = 1, account_status = CASE WHEN account_status = 'LIMITED' THEN 'LIMITED' ELSE 'ACTIVE' END WHERE id = ?").run(req.uid);
     res.json({ success: true, account_status: 'ACTIVE', id_verified: 1 });
   } catch (err) {
     res.status(500).json({ error: 'Unable to verify account.' });
   }
 });
 
-app.post('/api/admin/release-hold', (req, res) => {
+app.post('/api/admin/release-hold', async (req, res) => {
   try {
     const amount = Number(req.body.amount || 0);
     const adminUids = (process.env.ADMIN_UIDS || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -436,26 +325,26 @@ app.post('/api/admin/release-hold', (req, res) => {
     if (!allowed) return res.status(403).json({ error: 'Only an admin can release a hold.' });
     if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Release amount must be greater than zero.' });
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.body.userId || req.uid);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.body.userId || req.uid);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const releaseAmount = Math.min(Math.max(0, Number(user.held_balance || 0)), toCents(amount));
-    db.prepare('UPDATE users SET held_balance = held_balance - ? WHERE id = ?').run(releaseAmount, user.id);
+    const releaseAmount = Math.min(Math.max(0, Number(user.held_balance || 0)), money(amount));
+    await db.prepare('UPDATE users SET held_balance = held_balance - ? WHERE id = ?').run(releaseAmount, user.id);
     const auditId = randomUUID();
-    db.prepare('INSERT INTO account_audit_events (id, user_id, event_type, amount, note) VALUES (?, ?, ?, ?, ?)')
+    await db.prepare('INSERT INTO account_audit_events (id, user_id, event_type, amount, note) VALUES (?, ?, ?, ?, ?)')
       .run(auditId, user.id, 'HOLD_RELEASE', releaseAmount, `Admin release by ${req.uid}`);
 
-    res.json({ success: true, released: fromCents(releaseAmount), held_balance: fromCents(Number(user.held_balance || 0) - releaseAmount) });
+    res.json({ success: true, released: releaseAmount, held_balance: money(Number(user.held_balance || 0) - releaseAmount) });
   } catch (err) {
     res.status(500).json({ error: 'Unable to release hold.' });
   }
 });
 
-app.get('/api/transactions/:userId', (req, res) => {
+app.get('/api/transactions/:userId', async (req, res) => {
   try {
     if (req.uid !== req.params.userId) return res.status(403).json({ error: 'Forbidden' });
-    const txs = db.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC').all(req.params.userId);
-    res.json(txs.map((tx) => ({ ...tx, amount: fromCents(Number(tx.amount || 0)) })));
+    const txs = await db.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC').all(req.params.userId);
+    res.json(txs.map((tx) => ({ ...tx, amount: money(Number(tx.amount || 0)) })));
   } catch (err) {
     res.status(500).json({ error: 'Unable to load transactions.' });
   }
@@ -470,19 +359,19 @@ app.post('/api/transfer', async (req, res) => {
     if (!Number.isFinite(numAmount) || numAmount <= 0) {
       return res.status(400).json({ error: 'Invalid amount' });
     }
-    const sender = db.prepare('SELECT * FROM users WHERE id = ?').get(senderId);
+    const sender = await db.prepare('SELECT * FROM users WHERE id = ?').get(senderId);
     if (!sender) return res.status(404).json({ error: 'Sender not found' });
     assertAccountAllowed(sender, false, 'Transfer');
 
     const available = Math.max(0, Number(sender.balance || 0) - Number(sender.held_balance || 0));
-    const sendCents = toCents(numAmount);
-    if (available < sendCents) {
+    const sendAmount = money(numAmount);
+    if (available < sendAmount) {
       return res.status(400).json({ error: 'Insufficient available balance' });
     }
 
-    const recipient = db.prepare(`
+    const recipient = await db.prepare(`
       SELECT * FROM users
-      WHERE email = ? OR tag = ? OR id = ?
+      WHERE email = ? OR tag = ? OR id::text = ?
     `).get(normalizeEmail(recipientInput), normalizeTag(recipientInput), recipientInput);
 
     if (!recipient || recipient.id === sender.id) {
@@ -490,7 +379,7 @@ app.post('/api/transfer', async (req, res) => {
     }
 
     const country = String(req.headers['cf-ipcountry'] || req.headers['x-country-code'] || DEFAULT_COUNTRY).slice(0, 2).toUpperCase();
-    const deviceId = String(req.headers['x-device-id'] || `${DEFAULT_COUNTRY}_${sender.id.slice(0, 8)}`);
+    const deviceId = String(req.headers['x-device-id'] || `${DEFAULT_COUNTRY}_${String(sender.id).slice(0, 8)}`);
     const riskResult = await handleRiskPipeline(senderId, {
       amount: numAmount,
       type: 'TRANSFER_SEND',
@@ -502,36 +391,26 @@ app.post('/api/transfer', async (req, res) => {
     }
 
     const refId = `REF-${randomUUID()}`;
-    const nowIso = new Date().toISOString();
-
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      const freshSender = db.prepare('SELECT * FROM users WHERE id = ?').get(senderId);
+    await db.transaction(async (transactionDb) => {
+      const freshSender = await transactionDb.prepare('SELECT * FROM users WHERE id = ? FOR UPDATE').get(senderId);
       const freshAvailable = Math.max(0, Number(freshSender.balance || 0) - Number(freshSender.held_balance || 0));
-      if (freshAvailable < sendCents) {
+      if (freshAvailable < sendAmount) {
         throw new Error('Insufficient available balance');
       }
-      db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(sendCents, senderId);
-      db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(sendCents, recipient.id);
+      await transactionDb.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(sendAmount, senderId);
+      await transactionDb.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(sendAmount, recipient.id);
+      await transactionDb.prepare(`
+        INSERT INTO transactions (user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, description)
+        VALUES (?, 'SEND', ?, 'USD', ?, ?, 'COMPLETED', ?, ?, ?)
+      `).run(sender.id, sendAmount, recipient.name, recipient.email, refId, note || null, note || null);
+      await transactionDb.prepare(`
+        INSERT INTO transactions (user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, description)
+        VALUES (?, 'RECEIVE', ?, 'USD', ?, ?, 'COMPLETED', ?, ?, ?)
+      `).run(recipient.id, sendAmount, sender.name, sender.email, refId, note || null, note || null);
+    });
 
-      const senderTxId = `tx_${randomUUID()}`;
-      const recipientTxId = `tx_${randomUUID()}`;
-      db.prepare(`
-        INSERT INTO transactions (id, user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, created_at)
-        VALUES (?, ?, 'SEND', ?, 'USD', ?, ?, 'COMPLETED', ?, ?, ?)
-      `).run(senderTxId, sender.id, sendCents, recipient.name, recipient.email, refId, note || null, nowIso);
-      db.prepare(`
-        INSERT INTO transactions (id, user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, created_at)
-        VALUES (?, ?, 'RECEIVE', ?, 'USD', ?, ?, 'COMPLETED', ?, ?, ?)
-      `).run(recipientTxId, recipient.id, sendCents, sender.name, sender.email, refId, note || null, nowIso);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
-
-    const updatedSender = db.prepare('SELECT * FROM users WHERE id = ?').get(sender.id);
-    res.json({ success: true, balance: fromCents(Number(updatedSender.balance || 0)), reference: refId });
+    const updatedSender = await db.prepare('SELECT * FROM users WHERE id = ?').get(sender.id);
+    res.json({ success: true, balance: money(Number(updatedSender.balance || 0)), reference: refId });
   } catch (err) {
     console.error('Transfer error:', err);
     res.status(500).json({ error: 'Transfer could not be completed.' });
@@ -543,12 +422,12 @@ app.post('/api/paypal/create-order', async (req, res) => {
     const amount = Number(req.body.amount);
     if (!validAmount(amount)) return res.status(400).json({ error: 'Invalid amount; must be between $1.00 and $1000.00.' });
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
     if (!user) return res.status(404).json({ error: 'User not found' });
     assertAccountAllowed(user, false, 'PayPal top-up');
 
     const order = await createPayPalOrder(amount, 'USD');
-    db.prepare('INSERT INTO paypal_orders (order_id, user_id, amount, status) VALUES (?, ?, ?, ?)')
+    await db.prepare('INSERT INTO paypal_orders (order_id, user_id, amount, status) VALUES (?, ?, ?, ?)')
       .run(order.id, req.uid, toCents(amount), 'CREATED');
 
     res.json(order);
@@ -563,9 +442,9 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     const { orderId } = req.body;
     if (!orderId) return res.status(400).json({ error: 'Order ID required' });
 
-    const storedOrder = db.prepare('SELECT * FROM paypal_orders WHERE order_id = ?').get(orderId);
+    const storedOrder = await db.prepare('SELECT * FROM paypal_orders WHERE order_id = ?').get(orderId);
     if (!storedOrder) return res.status(404).json({ error: 'Order not found' });
-    if (storedOrder.user_id !== req.uid) return res.status(403).json({ error: 'Order does not belong to this user.' });
+    if (String(storedOrder.user_id) !== req.uid) return res.status(403).json({ error: 'Order does not belong to this user.' });
     if (storedOrder.status === 'CAPTURED') return res.json({ success: true, status: 'CAPTURED', previous: true, reference: orderId });
 
     let captureData;
@@ -583,24 +462,20 @@ app.post('/api/paypal/capture-order', async (req, res) => {
           const remoteOrder = await remote.json();
           const remoteCapture = remoteOrder.purchase_units?.[0]?.payments?.captures?.[0];
           if (remoteCapture?.id) {
-            const remoteAmount = toCents(Number(remoteCapture.amount?.value || 0));
-            const existing = db.prepare('SELECT * FROM processed_captures WHERE capture_id = ?').get(remoteCapture.id);
+            const remoteAmount = money(Number(remoteCapture.amount?.value || 0));
+            const existing = await db.prepare('SELECT * FROM processed_captures WHERE capture_id = ?').get(remoteCapture.id);
             if (!existing) {
-              db.exec('BEGIN IMMEDIATE');
-              try {
-                db.prepare('INSERT INTO processed_captures (capture_id, user_id, amount, credited) VALUES (?, ?, ?, 1)').run(remoteCapture.id, req.uid, remoteAmount);
-                db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(remoteAmount, req.uid);
-                db.prepare('UPDATE paypal_orders SET status = ? WHERE order_id = ?').run('CAPTURED', orderId);
-                db.prepare('INSERT INTO transactions (id, user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-                  .run(`tx_${randomUUID()}`, req.uid, 'DEPOSIT_PAYPAL', remoteAmount, 'USD', 'PayPal Deposit', 'service@paypal.com', 'COMPLETED', `PP-${remoteCapture.id}`, 'PayPal Funds Added', new Date().toISOString());
-                db.exec('COMMIT');
-              } catch (captureErr) {
-                db.exec('ROLLBACK');
-                throw captureErr;
-              }
+              await db.transaction(async (transactionDb) => {
+                const inserted = await transactionDb.prepare('INSERT INTO processed_captures (capture_id, user_id, amount, credited) VALUES (?, ?, ?, 1) ON CONFLICT (capture_id) DO NOTHING RETURNING capture_id').run(remoteCapture.id, req.uid, remoteAmount);
+                if (!inserted.rowCount) return;
+                await transactionDb.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(remoteAmount, req.uid);
+                await transactionDb.prepare('UPDATE paypal_orders SET status = ? WHERE order_id = ?').run('CAPTURED', orderId);
+                await transactionDb.prepare('INSERT INTO transactions (user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                  .run(req.uid, 'DEPOSIT_PAYPAL', remoteAmount, 'USD', 'PayPal Deposit', 'service@paypal.com', 'COMPLETED', `PP-${remoteCapture.id}`, 'PayPal Funds Added', 'PayPal Funds Added');
+              });
             }
-            const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
-            return res.json({ success: true, status: 'COMPLETED', balance: fromCents(Number(updatedUser.balance || 0)), reference: remoteCapture.id });
+            const updatedUser = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
+            return res.json({ success: true, status: 'COMPLETED', balance: money(Number(updatedUser.balance || 0)), reference: remoteCapture.id });
           }
         }
       }
@@ -613,30 +488,26 @@ app.post('/api/paypal/capture-order', async (req, res) => {
 
     const capture = captureData.purchase_units?.[0]?.payments?.captures?.[0];
     const captureId = capture?.id || `capture_${randomUUID()}`;
-    const capturedAmount = toCents(Number(capture?.amount?.value || 0));
+    const capturedAmount = money(Number(capture?.amount?.value || 0));
 
     if (capturedAmount <= 0) {
       return res.status(400).json({ error: 'Captured amount invalid' });
     }
 
-    const existingCapture = db.prepare('SELECT * FROM processed_captures WHERE capture_id = ?').get(captureId);
+    const existingCapture = await db.prepare('SELECT * FROM processed_captures WHERE capture_id = ?').get(captureId);
     if (!existingCapture) {
-      db.exec('BEGIN IMMEDIATE');
-      try {
-        db.prepare('INSERT INTO processed_captures (capture_id, user_id, amount, credited) VALUES (?, ?, ?, 1)').run(captureId, req.uid, capturedAmount);
-        db.prepare('UPDATE paypal_orders SET status = ? WHERE order_id = ?').run('CAPTURED', orderId);
-        db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(capturedAmount, req.uid);
-        db.prepare('INSERT INTO transactions (id, user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .run(`tx_${randomUUID()}`, req.uid, 'DEPOSIT_PAYPAL', capturedAmount, 'USD', 'PayPal Deposit', 'service@paypal.com', 'COMPLETED', `PP-${captureId}`, 'PayPal Funds Added', new Date().toISOString());
-        db.exec('COMMIT');
-      } catch (err2) {
-        db.exec('ROLLBACK');
-        throw err2;
-      }
+      await db.transaction(async (transactionDb) => {
+        const inserted = await transactionDb.prepare('INSERT INTO processed_captures (capture_id, user_id, amount, credited) VALUES (?, ?, ?, 1) ON CONFLICT (capture_id) DO NOTHING RETURNING capture_id').run(captureId, req.uid, capturedAmount);
+        if (!inserted.rowCount) return;
+        await transactionDb.prepare('UPDATE paypal_orders SET status = ? WHERE order_id = ?').run('CAPTURED', orderId);
+        await transactionDb.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(capturedAmount, req.uid);
+        await transactionDb.prepare('INSERT INTO transactions (user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(req.uid, 'DEPOSIT_PAYPAL', capturedAmount, 'USD', 'PayPal Deposit', 'service@paypal.com', 'COMPLETED', `PP-${captureId}`, 'PayPal Funds Added', 'PayPal Funds Added');
+      });
     }
 
-    const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
-    res.json({ success: true, balance: fromCents(Number(updatedUser.balance || 0)), transactionId: captureId, reference: `PP-${captureId}` });
+    const updatedUser = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
+    res.json({ success: true, balance: money(Number(updatedUser.balance || 0)), transactionId: captureId, reference: `PP-${captureId}` });
   } catch (err) {
     console.error('PayPal capture error:', err);
     res.status(500).json({ error: 'Unable to complete PayPal payment.' });
@@ -689,7 +560,7 @@ app.post('/api/checkout/risk-check', async (req, res) => {
     const assessmentId = randomUUID();
     const reason = String(model.reason || (model.highRisk ? 'The transaction needs additional review.' : 'No high-risk signals were identified.')).slice(0, 500);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    db.prepare('INSERT INTO checkout_assessments (id, cart_hash, high_risk, reason, expires_at) VALUES (?, ?, ?, ?, ?)')
+    await db.prepare('INSERT INTO checkout_assessments (id, cart_hash, high_risk, reason, expires_at) VALUES (?, ?, ?, ?, ?)')
       .run(assessmentId, cartHash(cart), model.highRisk ? 1 : 0, reason, expiresAt);
     res.json({ assessmentId, highRisk: model.highRisk, reason, expiresAt, overridePhrase: model.highRisk ? OVERRIDE_PHRASE : null });
   } catch (err) {
@@ -705,17 +576,17 @@ app.post('/api/checkout/create-order', async (req, res) => {
       return res.status(400).json({ error: 'Invalid offset donation amount' });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
     if (!user) return res.status(404).json({ error: 'User not found' });
     assertAccountAllowed(user, false, 'Checkout');
 
-    const assessment = validateAssessment(req.body.assessmentId, cart, req.body.overridePhrase);
+    const assessment = await validateAssessment(req.body.assessmentId, cart, req.body.overridePhrase);
     const order = await createPayPalCheckoutOrder(buildPurchaseUnits(cart, donationAmount));
-    const result = db.prepare('UPDATE checkout_assessments SET used = 1 WHERE id = ? AND used = 0').run(assessment.id);
-    if (result.changes === 0) {
+    const result = await db.prepare('UPDATE checkout_assessments SET used = 1 WHERE id = ? AND used = 0').run(assessment.id);
+    if (result.rowCount === 0) {
       return res.status(409).json({ error: 'This checkout review has already been used.' });
     }
-    db.prepare('INSERT INTO checkout_orders (order_id, assessment_id, cart_hash, user_id) VALUES (?, ?, ?, ?)')
+    await db.prepare('INSERT INTO checkout_orders (order_id, assessment_id, cart_hash, user_id) VALUES (?, ?, ?, ?)')
       .run(order.id, assessment.id, cartHash(cart), req.uid);
     res.json(order);
   } catch (err) {
@@ -726,29 +597,30 @@ app.post('/api/checkout/create-order', async (req, res) => {
 app.post('/api/checkout/capture-order', async (req, res) => {
   try {
     const { orderId } = req.body;
-    const order = db.prepare('SELECT * FROM checkout_orders WHERE order_id = ?').get(orderId);
+    const order = await db.prepare('SELECT * FROM checkout_orders WHERE order_id = ?').get(orderId);
     if (!order) return res.status(404).json({ error: 'Checkout order not found' });
+    if (order.user_id && String(order.user_id) !== req.uid) return res.status(403).json({ error: 'Order does not belong to this user.' });
     if (order.status === 'COMPLETED') return res.json({ success: true, status: 'COMPLETED' });
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(order.user_id || req.uid);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(order.user_id || req.uid);
     if (!user) return res.status(404).json({ error: 'User not found' });
     assertAccountAllowed(user, false, 'Checkout capture');
 
     const capture = await capturePayPalOrder(orderId);
     if (capture.status !== 'COMPLETED') return res.status(400).json({ error: `PayPal status: ${capture.status}` });
 
-    const amount = toCents(Number(capture.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value || 0));
-    db.prepare('UPDATE checkout_orders SET status = ? WHERE order_id = ?').run('COMPLETED', orderId);
-    db.prepare('INSERT INTO transactions (id, user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(`tx_${randomUUID()}`, order.user_id || req.uid, 'CHECKOUT_PAYPAL', amount, 'USD', 'Checkout Purchase', 'service@paypal.com', 'COMPLETED', `CHK-${orderId}`, 'Checkout purchase', new Date().toISOString());
-    const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(order.user_id || req.uid);
-    res.json({ success: true, status: capture.status, balance: fromCents(Number(updatedUser.balance || 0)) });
+    const amount = money(Number(capture.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value || 0));
+    await db.prepare('UPDATE checkout_orders SET status = ? WHERE order_id = ?').run('COMPLETED', orderId);
+    await db.prepare('INSERT INTO transactions (user_id, type, amount, currency, counterparty_name, counterparty_email, status, reference_id, note, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(order.user_id || req.uid, 'CHECKOUT_PAYPAL', amount, 'USD', 'Checkout Purchase', 'service@paypal.com', 'COMPLETED', `CHK-${orderId}`, 'Checkout purchase', 'Checkout purchase');
+    const updatedUser = await db.prepare('SELECT * FROM users WHERE id = ?').get(order.user_id || req.uid);
+    res.json({ success: true, status: capture.status, balance: money(Number(updatedUser.balance || 0)) });
   } catch (err) {
     res.status(400).json({ error: prettyError(err, 'PayPal capture failed') });
   }
 });
 
-app.post('/api/micro-pools', (req, res) => {
+app.post('/api/micro-pools', async (req, res) => {
   try {
     const cart = normalizeCart(req.body.cart);
     const targetAmount = toCents(Number(req.body.targetAmount || cartTotal(cart)));
@@ -758,7 +630,7 @@ app.post('/api/micro-pools', (req, res) => {
     }
     const id = randomUUID();
     const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
-    db.prepare(`INSERT INTO micro_pools (id, owner_user_id, target_amount, cart_json, expires_at) VALUES (?, ?, ?, ?, ?)`)
+    await db.prepare(`INSERT INTO micro_pools (id, owner_user_id, target_amount, cart_json, expires_at) VALUES (?, ?, ?, ?, ?)`)
       .run(id, req.uid || (typeof req.body.userId === 'string' ? req.body.userId.slice(0, 128) : null), targetAmount, JSON.stringify(cart), expiresAt);
     res.status(201).json({ id, targetAmount: fromCents(targetAmount), currentPooledAmount: 0, status: 'OPEN', expiresAt, shareUrl: `${req.protocol}://${req.get('host')}/?pool=${id}` });
   } catch (err) {
@@ -766,11 +638,11 @@ app.post('/api/micro-pools', (req, res) => {
   }
 });
 
-app.get('/api/micro-pools/:id', (req, res) => {
+app.get('/api/micro-pools/:id', async (req, res) => {
   try {
-    const pool = db.prepare('SELECT * FROM micro_pools WHERE id = ?').get(req.params.id);
+    const pool = await db.prepare('SELECT * FROM micro_pools WHERE id = ?').get(req.params.id);
     if (!pool) return res.status(404).json({ error: 'Group pool not found' });
-    const contributors = db.prepare(`SELECT COUNT(*) AS count FROM micro_pool_contributions WHERE pool_id = ? AND status = 'CAPTURED'`).get(pool.id);
+    const contributors = await db.prepare(`SELECT COUNT(*) AS count FROM micro_pool_contributions WHERE pool_id = ? AND status = 'CAPTURED'`).get(pool.id);
     res.json({
       id: pool.id,
       targetAmount: fromCents(Number(pool.target_amount || 0)),
@@ -778,7 +650,7 @@ app.get('/api/micro-pools/:id', (req, res) => {
       status: pool.status,
       expiresAt: pool.expires_at,
       cart: JSON.parse(pool.cart_json),
-      contributorCount: contributors.count
+      contributorCount: Number(contributors.count)
     });
   } catch (err) {
     res.status(500).json({ error: prettyError(err, 'Unable to load group pool') });
@@ -789,11 +661,11 @@ app.post('/api/micro-pools/:id/orders', async (req, res) => {
   const poolId = req.params.id;
   let reservedAmount = 0;
   try {
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.uid);
     if (!user) return res.status(404).json({ error: 'User not found' });
     assertAccountAllowed(user, false, 'Group pool contribution');
 
-    const pool = db.prepare('SELECT * FROM micro_pools WHERE id = ?').get(poolId);
+    const pool = await db.prepare('SELECT * FROM micro_pools WHERE id = ?').get(poolId);
     if (!pool || pool.status !== 'OPEN' || new Date(pool.expires_at) <= new Date()) {
       return res.status(400).json({ error: 'This group pool is no longer accepting payments' });
     }
@@ -803,79 +675,68 @@ app.post('/api/micro-pools/:id/orders', async (req, res) => {
     if (toCents(amount) > available) return res.status(400).json({ error: `Maximum available contribution is $${fromCents(available).toFixed(2)}` });
 
     const cart = [{ name: `Group contribution ${pool.id.slice(0, 8)}`, category: 'group contribution', quantity: 1, unitPrice: money(amount) }];
-    const assessment = validateAssessment(req.body.assessmentId, cart, req.body.overridePhrase);
+    const assessment = await validateAssessment(req.body.assessmentId, cart, req.body.overridePhrase);
     const contributionAmount = toCents(amount);
     reservedAmount = contributionAmount;
-    db.prepare('UPDATE micro_pools SET reserved_amount = reserved_amount + ? WHERE id = ?').run(contributionAmount, poolId);
+    await db.prepare('UPDATE micro_pools SET reserved_amount = reserved_amount + ? WHERE id = ?').run(contributionAmount, poolId);
     const order = await createPayPalCheckoutOrder([{ reference_id: `pool-${pool.id}`, description: 'Contribution to a Pulse group pool', amount: { currency_code: 'USD', value: money(amount).toFixed(2) } }]);
-    db.prepare(`INSERT INTO micro_pool_contributions (id, pool_id, paypal_order_id, amount) VALUES (?, ?, ?, ?)`)
+    await db.prepare(`INSERT INTO micro_pool_contributions (id, pool_id, paypal_order_id, amount) VALUES (?, ?, ?, ?)`)
       .run(randomUUID(), poolId, order.id, contributionAmount);
-    const updated = db.prepare('UPDATE checkout_assessments SET used = 1 WHERE id = ? AND used = 0').run(assessment.id);
-    if (updated.changes === 0) {
+    const updated = await db.prepare('UPDATE checkout_assessments SET used = 1 WHERE id = ? AND used = 0').run(assessment.id);
+    if (updated.rowCount === 0) {
       throw new Error('This checkout review has already been used.');
     }
     res.json(order);
   } catch (err) {
-    if (reservedAmount > 0) db.prepare('UPDATE micro_pools SET reserved_amount = MAX(0, reserved_amount - ?) WHERE id = ?').run(reservedAmount, poolId);
+    if (reservedAmount > 0) {
+      await db.prepare('UPDATE micro_pools SET reserved_amount = GREATEST(0, reserved_amount - ?) WHERE id = ?').run(reservedAmount, poolId);
+    }
     res.status(400).json({ error: prettyError(err, 'Unable to create contribution order') });
   }
 });
 
 app.post('/api/micro-pools/:id/capture', async (req, res) => {
   try {
-    const contribution = db.prepare('SELECT * FROM micro_pool_contributions WHERE pool_id = ? AND paypal_order_id = ?').get(req.params.id, req.body.orderId);
+    const contribution = await db.prepare('SELECT * FROM micro_pool_contributions WHERE pool_id = ? AND paypal_order_id = ?').get(req.params.id, req.body.orderId);
     if (!contribution) return res.status(404).json({ error: 'Pool contribution order not found' });
     if (contribution.status === 'CAPTURED') return res.json({ success: true, status: 'CAPTURED' });
     if (contribution.status !== 'PENDING') return res.status(400).json({ error: 'This contribution is no longer payable' });
 
-    const pool = db.prepare('SELECT * FROM micro_pools WHERE id = ?').get(req.params.id);
+    const pool = await db.prepare('SELECT * FROM micro_pools WHERE id = ?').get(req.params.id);
     let capture;
     try {
       capture = await capturePayPalOrder(contribution.paypal_order_id);
     } catch (err) {
-      db.exec('BEGIN IMMEDIATE');
-      try {
-        db.prepare("UPDATE micro_pool_contributions SET status = 'FAILED' WHERE id = ?").run(contribution.id);
-        db.prepare('UPDATE micro_pools SET reserved_amount = MAX(0, reserved_amount - ?) WHERE id = ?').run(contribution.amount, req.params.id);
-        db.exec('COMMIT');
-      } catch (commitErr) {
-        db.exec('ROLLBACK');
-        throw commitErr;
-      }
+      await db.transaction(async (transactionDb) => {
+        await transactionDb.prepare("UPDATE micro_pool_contributions SET status = 'FAILED' WHERE id = ?").run(contribution.id);
+        await transactionDb.prepare('UPDATE micro_pools SET reserved_amount = GREATEST(0, reserved_amount - ?) WHERE id = ?').run(contribution.amount, req.params.id);
+      });
       throw err;
     }
 
     const captureRecord = capture.purchase_units?.[0]?.payments?.captures?.[0];
     const capturedAmount = toCents(Number(captureRecord?.amount?.value || 0));
     if (capture.status !== 'COMPLETED' || !captureRecord?.id || capturedAmount !== Number(contribution.amount || 0)) {
-      db.exec('BEGIN IMMEDIATE');
-      try {
-        db.prepare("UPDATE micro_pool_contributions SET paypal_capture_id = ?, refund_request_id = ?, status = 'REFUND_FAILED' WHERE id = ?").run(captureRecord?.id || randomUUID(), randomUUID(), contribution.id);
-        db.prepare('UPDATE micro_pools SET reserved_amount = MAX(0, reserved_amount - ?) WHERE id = ?').run(contribution.amount, req.params.id);
-        db.exec('COMMIT');
-      } catch (err2) {
-        db.exec('ROLLBACK');
-        throw err2;
-      }
+      await db.transaction(async (transactionDb) => {
+        await transactionDb.prepare("UPDATE micro_pool_contributions SET paypal_capture_id = ?, refund_request_id = ?, status = 'REFUND_FAILED' WHERE id = ?").run(captureRecord?.id || randomUUID(), randomUUID(), contribution.id);
+        await transactionDb.prepare('UPDATE micro_pools SET reserved_amount = GREATEST(0, reserved_amount - ?) WHERE id = ?').run(contribution.amount, req.params.id);
+      });
       return res.status(400).json({ error: `PayPal capture did not match the recorded contribution. Capture ID: ${captureRecord?.id || 'unknown'}; refund queued.` });
     }
 
     if (!pool || pool.status !== 'OPEN' || new Date(pool.expires_at) <= new Date()) {
       const requestId = randomUUID();
-      db.exec('BEGIN IMMEDIATE');
-      try {
-        db.prepare("UPDATE micro_pool_contributions SET paypal_capture_id = ?, refund_request_id = ?, status = 'REFUND_FAILED' WHERE id = ?").run(captureRecord.id, requestId, contribution.id);
-        db.prepare("UPDATE micro_pools SET reserved_amount = MAX(0, reserved_amount - ?), status = 'REFUND_FAILED' WHERE id = ?").run(contribution.amount, req.params.id);
-        db.exec('COMMIT');
-      } catch (err) {
-        db.exec('ROLLBACK');
-        throw err;
-      }
+      await db.transaction(async (transactionDb) => {
+        await transactionDb.prepare("UPDATE micro_pool_contributions SET paypal_capture_id = ?, refund_request_id = ?, status = 'REFUND_FAILED' WHERE id = ?").run(captureRecord.id, requestId, contribution.id);
+        await transactionDb.prepare("UPDATE micro_pools SET reserved_amount = GREATEST(0, reserved_amount - ?), status = 'REFUND_FAILED' WHERE id = ?").run(contribution.amount, req.params.id);
+      });
       try {
         await refundPayPalCapture(captureRecord.id, requestId);
-        db.prepare("UPDATE micro_pool_contributions SET status = 'REFUNDED' WHERE id = ?").run(contribution.id);
-        const remainingRefunds = db.prepare("SELECT COUNT(*) AS count FROM micro_pool_contributions WHERE pool_id = ? AND status IN ('CAPTURED', 'REFUND_FAILED')").get(req.params.id).count;
-        if (remainingRefunds === 0) db.prepare("UPDATE micro_pools SET status = 'REFUNDED' WHERE id = ?").run(req.params.id);
+        await db.prepare("UPDATE micro_pool_contributions SET status = 'REFUNDED' WHERE id = ?").run(contribution.id);
+        const remainingRefunds = await db.prepare("SELECT COUNT(*) AS count FROM micro_pool_contributions WHERE pool_id = ? AND status IN ('CAPTURED', 'REFUND_FAILED')").get(req.params.id);
+        if (Number(remainingRefunds.count) === 0) {
+          await db.prepare("UPDATE micro_pools SET status = 'REFUNDED' WHERE id = ?").run(req.params.id);
+        }
         return res.status(409).json({ error: 'The pool expired during payment. PayPal has been asked to refund your contribution.' });
       } catch (err) {
         console.error(`Pool refund failed for ${contribution.id}:`, err.message);
@@ -885,15 +746,10 @@ app.post('/api/micro-pools/:id/capture', async (req, res) => {
 
     const newTotal = Number(pool.pooled_amount || 0) + Number(contribution.amount || 0);
     const status = newTotal >= Number(pool.target_amount || 0) ? 'FUNDED' : 'OPEN';
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      db.prepare(`UPDATE micro_pool_contributions SET paypal_capture_id = ?, status = 'CAPTURED' WHERE id = ?`).run(captureRecord.id, contribution.id);
-      db.prepare('UPDATE micro_pools SET pooled_amount = ?, reserved_amount = MAX(0, reserved_amount - ?), status = ? WHERE id = ?').run(newTotal, contribution.amount, status, req.params.id);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+    await db.transaction(async (transactionDb) => {
+      await transactionDb.prepare(`UPDATE micro_pool_contributions SET paypal_capture_id = ?, status = 'CAPTURED' WHERE id = ?`).run(captureRecord.id, contribution.id);
+      await transactionDb.prepare('UPDATE micro_pools SET pooled_amount = ?, reserved_amount = GREATEST(0, reserved_amount - ?), status = ? WHERE id = ?').run(newTotal, contribution.amount, status, req.params.id);
+    });
     res.json({ success: true, status, currentPooledAmount: fromCents(newTotal), targetAmount: fromCents(Number(pool.target_amount || 0)) });
   } catch (err) {
     res.status(400).json({ error: prettyError(err, 'Pool contribution capture failed') });
@@ -909,11 +765,11 @@ app.post('/api/ai/assistant', async (req, res) => {
     let userContext = 'No account found.';
     const userId = req.uid || req.body.userId;
     if (userId) {
-      const user = db.prepare('SELECT email, name, tag, balance, account_status FROM users WHERE id = ?').get(userId);
-      const txs = db.prepare('SELECT type, amount, created_at, counterparty_name FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 5').all(userId);
+      const user = await db.prepare('SELECT email, name, tag, balance, account_status FROM users WHERE id = ?').get(userId);
+      const txs = await db.prepare('SELECT type, amount, created_at, counterparty_name FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 5').all(userId);
       if (user) {
         const safeName = String(user.name || 'Pulse member').slice(0, 64);
-        userContext = `User: ${safeName} (${String(user.tag || '').slice(0, 32)}). Balance: $${fromCents(Number(user.balance || 0)).toFixed(2)}. Status: ${user.account_status}. Recent transactions: ${JSON.stringify(txs)}`;
+        userContext = `User: ${safeName} (${String(user.tag || '').slice(0, 32)}). Balance: $${money(Number(user.balance || 0)).toFixed(2)}. Status: ${user.account_status}. Recent transactions: ${JSON.stringify(txs)}`;
       }
     }
 
@@ -971,9 +827,6 @@ app.post('/api/escrow/void', async (req, res) => {
   }
 });
 
-processExpiredPools().catch((err) => console.error('Pool expiry sweep failed:', err));
-setInterval(() => processExpiredPools().catch((err) => console.error('Pool expiry sweep failed:', err)), 60 * 1000).unref();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
@@ -986,6 +839,10 @@ if (fs.existsSync(clientDist)) {
     }
   });
 }
+
+await initDb();
+processExpiredPools().catch((err) => console.error('Pool expiry sweep failed:', err));
+setInterval(() => processExpiredPools().catch((err) => console.error('Pool expiry sweep failed:', err)), 60 * 1000).unref();
 
 app.listen(PORT, () => {
   console.log(`Pulse API running on http://localhost:${PORT}`);

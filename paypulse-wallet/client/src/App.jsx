@@ -8,11 +8,9 @@ import CheckoutView from './components/CheckoutView';
 import AssistantView from './components/AssistantView';
 import SendModal from './components/SendModal';
 import { Check, ChevronDown, Copy, LogOut } from 'lucide-react';
-import { auth, onAuthStateChanged, signOut } from './firebase';
 import { api } from './services/api';
 
 export default function App() {
-  const [firebaseUser, setFirebaseUser] = useState(null);
   const [pulseUser, setPulseUser] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [transactionsError, setTransactionsError] = useState('');
@@ -42,20 +40,14 @@ export default function App() {
     };
   }, []);
 
-  const syncAndLoadUserData = useCallback(async (fbUser) => {
-    const synced = await api.syncUser({
-      uid: fbUser.uid,
-      email: fbUser.email,
-      name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Pulse member',
-      avatar: fbUser.photoURL || null
-    });
-    if (!synced?.id) {
+  const loadUserData = useCallback(async (user) => {
+    if (!user?.id) {
       throw new Error('Your account could not be loaded. Please try again.');
     }
-    setPulseUser(synced);
+    setPulseUser(user);
 
     try {
-      const txs = await api.getTransactions(synced.id);
+      const txs = await api.getTransactions(user.id);
       setTransactions(txs);
       setTransactionsError('');
     } catch (err) {
@@ -77,11 +69,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-      setLoadError('');
-      setLoading(true);
-      if (!user) {
+    let active = true;
+    const restoreSession = async () => {
+      if (!api.getToken()) {
         setPulseUser(null);
         setTransactions([]);
         setTransactionsError('');
@@ -89,24 +79,52 @@ export default function App() {
         return;
       }
 
-      setPulseUser(null);
-      setTransactions([]);
+      setLoadError('');
+      setLoading(true);
       try {
-        await syncAndLoadUserData(user);
+        const user = await api.getCurrentUser();
+        if (active) await loadUserData(user);
       } catch (err) {
-        console.error('User load error:', err);
-        setLoadError(err.message || 'Unable to load your account. Please try again.');
+        console.error('Session restore error:', err);
+        if (active) {
+          if (err.status === 401) {
+            api.signOut();
+            setPulseUser(null);
+            setTransactions([]);
+          } else {
+            setLoadError(err.message || 'Unable to load your account. Please try again.');
+          }
+        }
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
-    });
+    };
 
-    return () => unsubscribe();
-  }, [syncAndLoadUserData]);
+    restoreSession();
+    return () => {
+      active = false;
+    };
+  }, [loadUserData]);
 
   const handleSignOut = async () => {
-    await signOut(auth);
+    api.signOut();
+    setPulseUser(null);
+    setTransactions([]);
+    setLoadError('');
     setIsProfileOpen(false);
+  };
+
+  const handleAuthSuccess = async (user) => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      await loadUserData(user);
+    } catch (err) {
+      console.error('User load error:', err);
+      setLoadError(err.message || 'Unable to load your account. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleProfileTagCopy = async () => {
@@ -127,11 +145,11 @@ export default function App() {
   };
 
   const handleRetryLoad = async () => {
-    if (!firebaseUser) return;
     setLoading(true);
     setLoadError('');
     try {
-      await syncAndLoadUserData(firebaseUser);
+      const user = await api.getCurrentUser();
+      await loadUserData(user);
     } catch (err) {
       console.error('User load retry error:', err);
       setLoadError(err.message || 'Unable to load your account. Please try again.');
@@ -141,26 +159,22 @@ export default function App() {
   };
 
   const handleTransferSuccess = async () => {
-    if (firebaseUser) {
-      try {
-        await syncAndLoadUserData(firebaseUser);
-      } catch (err) {
-        console.error('Wallet refresh error:', err);
-        setLoadError(err.message || 'Unable to refresh your wallet.');
-      }
+    try {
+      await loadUserData(await api.getCurrentUser());
+    } catch (err) {
+      console.error('Wallet refresh error:', err);
+      setLoadError(err.message || 'Unable to refresh your wallet.');
     }
   };
 
   const handleDepositSuccess = useCallback(async () => {
-    if (firebaseUser) {
-      try {
-        await syncAndLoadUserData(firebaseUser);
-      } catch (err) {
-        console.error('Wallet refresh error:', err);
-        setLoadError(err.message || 'Unable to refresh your wallet.');
-      }
+    try {
+      await loadUserData(await api.getCurrentUser());
+    } catch (err) {
+      console.error('Wallet refresh error:', err);
+      setLoadError(err.message || 'Unable to refresh your wallet.');
     }
-  }, [firebaseUser, syncAndLoadUserData]);
+  }, [loadUserData]);
 
   if (loading) {
     return (
@@ -171,8 +185,8 @@ export default function App() {
     );
   }
 
-  if (!firebaseUser) {
-    return <AuthView onAuthSuccess={() => setLoading(true)} />;
+  if (!pulseUser) {
+    return <AuthView onAuthSuccess={handleAuthSuccess} />;
   }
 
   if (loadError || !pulseUser) {
@@ -232,7 +246,7 @@ export default function App() {
                 <div className="profile-dropdown" role="dialog" aria-label="Account profile">
                   <div className="profile-details">
                     <strong>{pulseUser.name || 'Pulse member'}</strong>
-                    <span>{pulseUser.email || firebaseUser.email}</span>
+                    <span>{pulseUser.email}</span>
                   </div>
                   <button
                     type="button"
@@ -298,7 +312,7 @@ export default function App() {
         )}
 
         {activeTab === 'ai' && (
-          <AssistantView user={pulseUser} userId={firebaseUser.uid} />
+          <AssistantView user={pulseUser} userId={pulseUser.id} />
         )}
         </main>
         <footer className="app-footer">

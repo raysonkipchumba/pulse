@@ -84,7 +84,9 @@ ECO_NGO_PAYPAL_ID=ngo@example.org
 
 For Render, add `CLIENT_ORIGIN` to the backend service's Environment settings and set it to the frontend's public origin (scheme and hostname only, with no path or trailing slash), then redeploy. If the frontend is served by the same service, use that service's public URL. The server intentionally refuses to start in production without this setting rather than enabling permissive cross-origin access.
 
-For Firebase sign-in, set the backend's `FIREBASE_PROJECT_ID` to the same project ID as the frontend's `VITE_FIREBASE_PROJECT_ID`. Configure either `FIREBASE_SERVICE_ACCOUNT` with the service-account JSON for that project, or `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY` from that service account. Store credentials in Render's environment settings, never in the repository.
+For account sign-in, the backend stores password hashes in the Render Postgres database. Set `DATABASE_URL` to the Render database's internal connection string, `JWT_SECRET` to a long, random secret, and `NODE_ENV=production` in the backend service's Environment settings. Do not use the development fallback secret in production.
+
+The Postgres database starts with an empty wallet; existing local SQLite data and accounts are not imported. Create a new account through the app's registration screen.
 
 `GEMINI_API_KEY` enables the Sentinel transaction review and item-specific Eco-Route estimate. The server-side historical-data JSON is sent as context to the review model; it should be maintained from trusted merchant records, not browser input. Eco donations require PayPal multiparty checkout approval and a configured NGO receiver. Without an NGO receiver, opting into a donation will be rejected rather than silently routing it to the merchant.
 
